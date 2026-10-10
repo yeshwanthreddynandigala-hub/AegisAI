@@ -1,0 +1,4 @@
+model_id,accuracy,f1_score,latency_ms
+agent_v1,0.88,0.85,120
+agent_v2,0.92,0.91,145
+agent_v3,0.95,0.94,180

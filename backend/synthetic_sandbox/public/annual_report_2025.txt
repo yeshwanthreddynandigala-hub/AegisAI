@@ -1,0 +1,5 @@
+Acme Corp Annual Report 2025
+Total Revenue: $45.2M
+Operating Profit: $12.1M
+Key Initiatives: Migration of customer workloads to AI-assisted workflows.
+Risk Factors: Increasing regulatory oversight of autonomous agent systems.
