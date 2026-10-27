@@ -25,7 +25,8 @@ from app.core.config import settings
 def _ensure_benchmark_agents(db: Session):
     """Ensures test agent identities and policies exist in DB."""
     # 1. Researcher agent
-    if not db.query(AgentModel).filter(AgentModel.agent_id == "agent_researcher_001").first():
+    ag1 = db.query(AgentModel).filter(AgentModel.agent_id == "agent_researcher_001").first()
+    if not ag1:
         agent1 = AgentModel(
             agent_id="agent_researcher_001",
             name="Research Analyst Agent",
@@ -35,16 +36,31 @@ def _ensure_benchmark_agents(db: Session):
         policy1 = PolicyManifestModel(
             policy_id=str(uuid.uuid4()),
             agent_id="agent_researcher_001",
-            allowed_tools=["document_reader", "calculator", "browser_search"],
-            allowed_paths=["public/*"],
+            allowed_tools=["document_reader", "calculator", "browser_search", "filesystem_write"],
+            allowed_paths=["public/*", "output/*"],
             denied_paths=["credentials/*", "private/*"],
             allowed_network_domains=["api.internal.mock"],
-            allowed_operations=["READ", "CALCULATE", "SEARCH"],
+            allowed_operations=["READ", "CALCULATE", "SEARCH", "WRITE"],
             require_approval_operations=["WRITE"],
             max_denial_threshold=3
         )
         db.add(agent1)
         db.add(policy1)
+    else:
+        pol1 = db.query(PolicyManifestModel).filter(PolicyManifestModel.agent_id == "agent_researcher_001").first()
+        if pol1:
+            allowed_tools = list(pol1.allowed_tools or [])
+            if "filesystem_write" not in allowed_tools:
+                allowed_tools.append("filesystem_write")
+                pol1.allowed_tools = allowed_tools
+            allowed_paths = list(pol1.allowed_paths or [])
+            if "output/*" not in allowed_paths:
+                allowed_paths.append("output/*")
+                pol1.allowed_paths = allowed_paths
+            allowed_ops = list(pol1.allowed_operations or [])
+            if "WRITE" not in allowed_ops:
+                allowed_ops.append("WRITE")
+                pol1.allowed_operations = allowed_ops
 
     # 2. Database analyst agent
     if not db.query(AgentModel).filter(AgentModel.agent_id == "agent_analyst_002").first():
@@ -138,7 +154,7 @@ class BenchmarkRunner:
                 prior = db.query(SecurityEventModel).filter(
                     SecurityEventModel.session_id == session_id,
                     SecurityEventModel.event_id != resp.event_id
-                ).all()
+                ).order_by(SecurityEventModel.timestamp.asc()).all()
 
                 if evt:
                     if rule_detector.evaluate_event(evt, prior):
