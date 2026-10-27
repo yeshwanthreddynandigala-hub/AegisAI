@@ -66,6 +66,41 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 def init_db() -> None:
-    """Create all tables on application startup."""
+    """Create all tables on application startup and seed default system accounts."""
     import app.models  # Ensure models are imported
     Base.metadata.create_all(bind=engine)
+
+
+def ensure_default_users(db: Session) -> None:
+    """Seeds default admin and analyst users for local evaluation if they do not exist."""
+    from app.models.user import UserModel, UserRole
+    from app.core.security import hash_password
+    import uuid
+
+    admin_user = db.query(UserModel).filter(UserModel.username == "admin").first()
+    if not admin_user:
+        admin_user = UserModel(
+            user_id=str(uuid.uuid4()),
+            username="admin",
+            email="admin@aegisai.local",
+            hashed_password=hash_password(settings.default_admin_password),
+            full_name="Security Administrator",
+            role=UserRole.ADMIN.value,
+            is_active=True
+        )
+        db.add(admin_user)
+
+    analyst_user = db.query(UserModel).filter(UserModel.username == "analyst").first()
+    if not analyst_user:
+        analyst_user = UserModel(
+            user_id=str(uuid.uuid4()),
+            username="analyst",
+            email="analyst@aegisai.local",
+            hashed_password=hash_password(settings.default_analyst_password),
+            full_name="SOC Lead Analyst",
+            role=UserRole.ANALYST.value,
+            is_active=True
+        )
+        db.add(analyst_user)
+
+    db.commit()

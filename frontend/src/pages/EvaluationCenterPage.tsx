@@ -15,8 +15,10 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } fro
 import { api } from '../services/api';
 import { BenchmarkSummary } from '../types';
 import { formatLocalDateTime } from '../utils/dateUtils';
+import { useAuth } from '../context/AuthContext';
 
 export const EvaluationCenterPage: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [benchmark, setBenchmark] = useState<BenchmarkSummary | null>(null);
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,10 +93,21 @@ export const EvaluationCenterPage: React.FC = () => {
         <button
           onClick={handleRunBenchmark}
           disabled={running}
-          className="px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-mono font-medium flex items-center space-x-2 shadow-lg shadow-sky-500/20 disabled:opacity-50"
+          title={isAdmin ? "Run full empirical benchmark across all detection engines" : "Admin privileges required to trigger benchmark"}
+          className={`px-4 py-2 rounded-lg text-xs font-mono font-medium flex items-center space-x-2 shadow-lg disabled:opacity-50 transition-all ${
+            isAdmin
+              ? 'bg-sky-500 hover:bg-sky-600 text-white shadow-sky-500/20'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+          }`}
         >
           <Play className={`w-3.5 h-3.5 ${running ? 'animate-spin' : ''}`} />
-          <span>{running ? 'EVALUATING TESTBED...' : 'RUN BENCHMARK SUITE'}</span>
+          <span>
+            {running
+              ? 'EVALUATING TESTBED...'
+              : isAdmin
+              ? 'RUN BENCHMARK SUITE'
+              : 'RUN BENCHMARK (ADMIN ONLY)'}
+          </span>
         </button>
       </div>
 

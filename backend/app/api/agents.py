@@ -9,12 +9,14 @@ import uuid
 
 from app.core.database import get_db
 from app.models.agent import AgentModel, PolicyManifestModel
+from app.models.user import UserModel
 from app.schemas.agent import AgentCreate, AgentResponse, PolicyManifestResponse
+from app.api.deps import get_current_user, require_admin
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 @router.get("", response_model=List[AgentResponse])
-def list_agents(db: Session = Depends(get_db)):
+def list_agents(db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """List all registered monitored AI agents and their active policies."""
     agents = db.query(AgentModel).all()
     res = []
@@ -27,7 +29,7 @@ def list_agents(db: Session = Depends(get_db)):
     return res
 
 @router.get("/{agent_id}", response_model=AgentResponse)
-def get_agent(agent_id: str, db: Session = Depends(get_db)):
+def get_agent(agent_id: str, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """Get detailed agent identity and policy configuration."""
     ag = db.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
     if not ag:
@@ -39,8 +41,8 @@ def get_agent(agent_id: str, db: Session = Depends(get_db)):
     return ag_data
 
 @router.post("", response_model=AgentResponse)
-def create_agent(payload: AgentCreate, db: Session = Depends(get_db)):
-    """Register a new controlled AI agent and assign its security manifest."""
+def create_agent(payload: AgentCreate, db: Session = Depends(get_db), admin_user: UserModel = Depends(require_admin)):
+    """Register a new controlled AI agent and assign its security manifest (Admin privilege required)."""
     existing = db.query(AgentModel).filter(AgentModel.agent_id == payload.agent_id).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"Agent '{payload.agent_id}' already exists.")

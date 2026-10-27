@@ -11,13 +11,15 @@ import uuid
 from app.core.database import get_db
 from app.evaluation.scenarios import SCENARIO_CATALOG
 from app.evaluation.benchmark_runner import _ensure_benchmark_agents
+from app.models.user import UserModel
 from app.schemas.event import ToolCallRequest
 from app.security.gateway import gateway
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/simulations", tags=["Simulations"])
 
 @router.get("/scenarios", response_model=List[Dict[str, Any]])
-def list_scenarios():
+def list_scenarios(current_user: UserModel = Depends(get_current_user)):
     """Returns available simulation lab scenarios."""
     return [
         {
@@ -34,7 +36,7 @@ def list_scenarios():
     ]
 
 @router.post("/run/{scenario_id}")
-def run_simulation_scenario(scenario_id: str, db: Session = Depends(get_db)):
+def run_simulation_scenario(scenario_id: str, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """
     Executes a controlled test scenario live against the Gateway and security pipeline.
     Returns real-time execution results, policy blocks, and created incidents.

@@ -14,6 +14,7 @@ import {
 import { api } from '../services/api';
 import { Incident, IncidentDetail } from '../types';
 import { formatLocalDateTime, formatUtcDateTime, isHistoricalDemoEvent } from '../utils/dateUtils';
+import { useAuth } from '../context/AuthContext';
 
 interface IncidentInvestigationPageProps {
   initialIncidentId?: string | null;
@@ -24,12 +25,15 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
   initialIncidentId,
   onClearIncidentSelection
 }) => {
+  const { isAdmin } = useAuth();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(initialIncidentId || null);
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [investigating, setInvestigating] = useState<boolean>(false);
   const [investigationReport, setInvestigationReport] = useState<string | null>(null);
+  const [containError, setContainError] = useState<string | null>(null);
+  const [containSuccess, setContainSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     loadIncidents();
@@ -56,6 +60,8 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
   const loadIncidentDetail = async (id: string) => {
     try {
       setLoading(true);
+      setContainError(null);
+      setContainSuccess(null);
       const data = await api.getIncidentDetail(id);
       setDetail(data);
       setInvestigationReport(data.investigation_report || null);
@@ -81,14 +87,17 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
 
   const handleContainIncident = async () => {
     if (!selectedIncidentId) return;
+    setContainError(null);
+    setContainSuccess(null);
     try {
-      await api.containIncident(selectedIncidentId);
+      const res = await api.containIncident(selectedIncidentId);
       if (detail) {
         setDetail({ ...detail, status: 'CONTAINED' });
       }
+      setContainSuccess(res.message || 'Incident contained and compromised agent quarantined.');
       loadIncidents();
-    } catch (err) {
-      console.error('Failed to contain incident:', err);
+    } catch (err: any) {
+      setContainError(err.message || 'Failed to contain incident.');
     }
   };
 
@@ -198,9 +207,14 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
                     {detail.status !== 'CONTAINED' && (
                       <button
                         onClick={handleContainIncident}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-xs font-mono font-medium"
+                        title={isAdmin ? "Contain incident and quarantine compromised agent session" : "Admin privileges required to contain incident"}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
+                          isAdmin
+                            ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                            : 'bg-slate-800/80 border border-slate-700 text-slate-400 hover:text-slate-300'
+                        }`}
                       >
-                        CONTAIN INCIDENT
+                        {isAdmin ? 'CONTAIN INCIDENT' : 'CONTAIN (ADMIN ONLY)'}
                       </button>
                     )}
                     <button
@@ -213,6 +227,19 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
                     </button>
                   </div>
                 </div>
+
+                {containError && (
+                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center space-x-2">
+                    <XCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{containError}</span>
+                  </div>
+                )}
+                {containSuccess && (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    <span>{containSuccess}</span>
+                  </div>
+                )}
 
                 <div className="text-xs text-slate-300 leading-relaxed font-sans bg-slate-950 p-3 rounded-lg border border-slate-800">
                   {detail.summary}

@@ -12,13 +12,15 @@ from app.core.database import get_db
 from app.models.agent import AgentModel
 from app.models.event import SecurityEventModel
 from app.models.incident import IncidentModel
+from app.models.user import UserModel
 from app.schemas.incident import IncidentResponse
 from app.schemas.event import SecurityEventResponse
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/overview", tags=["Overview"])
 
 @router.get("/stats", response_model=Dict[str, Any])
-def get_overview_statistics(db: Session = Depends(get_db)):
+def get_overview_statistics(db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """Computes comprehensive dashboard telemetry metrics directly from database."""
     total_agents = db.query(AgentModel).count()
     total_events = db.query(SecurityEventModel).count()

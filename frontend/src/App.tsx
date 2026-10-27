@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginPage } from './pages/LoginPage';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { OverviewPage } from './pages/OverviewPage';
@@ -8,8 +10,9 @@ import { IncidentInvestigationPage } from './pages/IncidentInvestigationPage';
 import { SimulationLabPage } from './pages/SimulationLabPage';
 import { EvaluationCenterPage } from './pages/EvaluationCenterPage';
 import { ThreatCorrelationPage } from './pages/ThreatCorrelationPage';
+import { Shield } from 'lucide-react';
 
-export const App: React.FC = () => {
+const MainDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('overview');
   const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState<number>(0);
@@ -73,6 +76,36 @@ export const App: React.FC = () => {
         </main>
       </div>
     </div>
+  );
+};
+
+const AuthenticatedApp: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#07090e] flex flex-col items-center justify-center text-slate-400 font-mono text-xs">
+        <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 mb-4 animate-pulse">
+          <Shield className="w-6 h-6" />
+        </div>
+        <p className="tracking-widest uppercase text-slate-300">AUTHENTICATING SECURE SESSION...</p>
+        <span className="text-[10px] text-slate-500 mt-1">Verifying cryptographic JWT signature & zero-trust identity</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return <MainDashboard />;
+};
+
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 };
 

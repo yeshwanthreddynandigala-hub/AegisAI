@@ -176,3 +176,36 @@ export interface ThreatGraphData {
   nodes: ThreatGraphNode[];
   edges: ThreatGraphEdge[];
 }
+
+export type UserRole = 'ADMIN' | 'ANALYST';
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  full_name?: string | null;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  last_login?: string | null;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in_seconds: number;
+  user: User;
+}
+
+export interface LoginPayload {
+  username: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  username: string;
+  email: string;
+  password: string;
+  full_name?: string;
+  role?: UserRole;
+}

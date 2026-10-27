@@ -18,6 +18,9 @@ from app.core.database import Base, get_db
 from app.models.agent import AgentModel, PolicyManifestModel
 from app.models.event import SecurityEventModel
 from app.models.incident import IncidentModel
+from app.models.user import UserModel, UserRole
+from app.core.database import ensure_default_users
+from app.core.security import create_access_token
 from app.security.gateway import gateway
 from app.security.correlation_engine import correlation_engine
 from app.security.sequence_detector import sequence_detector
@@ -37,9 +40,14 @@ def client_and_db():
     TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
     db = TestingSession()
 
+    ensure_default_users(db)
     _ensure_benchmark_agents(db)
     correlation_engine.set_detectors(sequence_detector=sequence_detector, ml_detector=ml_detector)
     gateway.set_correlation_engine(correlation_engine)
+
+    # Issue admin token for default authorized requests
+    admin = db.query(UserModel).filter(UserModel.username == "admin").first()
+    token = create_access_token(data={"sub": admin.user_id, "username": admin.username, "role": admin.role})
 
     def _override_get_db():
         session = TestingSession()
@@ -51,6 +59,7 @@ def client_and_db():
     app.dependency_overrides[get_db] = _override_get_db
 
     with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {token}"
         yield c, db
 
     app.dependency_overrides.clear()

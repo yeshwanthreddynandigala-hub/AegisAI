@@ -28,6 +28,18 @@ class Settings(BaseModel):
     max_policy_denials_before_lockout: int = 3
     ml_model_dir: Path = BASE_DIR / "models_storage"
 
+    # Security & Authentication (JWT & RBAC)
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "aegis-ai-dev-secret-key-32-chars-long-minimum!")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    cors_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+        if origin.strip()
+    ]
+    default_admin_password: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "AdminAegis2026!")
+    default_analyst_password: str = os.getenv("DEFAULT_ANALYST_PASSWORD", "AnalystAegis2026!")
+
     # Optional External LLM Config
     llm_provider: str = os.getenv("LLM_PROVIDER", "offline")  # offline | gemini | openai
     llm_api_key: str = os.getenv("LLM_API_KEY", "")

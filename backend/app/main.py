@@ -8,8 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
-from app.core.database import init_db, SessionLocal
+from app.core.database import init_db, SessionLocal, ensure_default_users
 from app.evaluation.benchmark_runner import _ensure_benchmark_agents
+from app.api.auth import router as auth_router
 from app.api.agents import router as agents_router
 from app.api.events import router as events_router
 from app.api.incidents import router as incidents_router
@@ -20,10 +21,11 @@ from app.api.overview import router as overview_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialize database and baseline agents
+    # Startup: initialize database, default users, and baseline agents
     init_db()
     db = SessionLocal()
     try:
+        ensure_default_users(db)
         _ensure_benchmark_agents(db)
     finally:
         db.close()
@@ -37,16 +39,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for local Vite development frontend
+# Restrict CORS to configured frontend origins (strictly avoid wildcard origin with credentials)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
 
 # Mount API Routers under /api/v1 prefix
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(overview_router, prefix="/api/v1")
 app.include_router(agents_router, prefix="/api/v1")
 app.include_router(events_router, prefix="/api/v1")

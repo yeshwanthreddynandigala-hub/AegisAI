@@ -8,8 +8,10 @@ from typing import List, Optional
 
 from app.core.database import get_db
 from app.models.event import SecurityEventModel
+from app.models.user import UserModel
 from app.schemas.event import SecurityEventResponse, ToolCallRequest, ToolCallResponse
 from app.security.gateway import gateway
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/events", tags=["Events"])
 
@@ -21,7 +23,8 @@ def list_events(
     execution_status: Optional[str] = Query(None, description="Filter by execution status (EXECUTED/BLOCKED)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
 ):
     """Retrieve audit events with comprehensive SOC filtering."""
     q = db.query(SecurityEventModel)
@@ -38,7 +41,7 @@ def list_events(
     return [SecurityEventResponse.model_validate(e) for e in events]
 
 @router.get("/{event_id}", response_model=SecurityEventResponse)
-def get_event(event_id: str, db: Session = Depends(get_db)):
+def get_event(event_id: str, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """Retrieve specific event telemetry by event ID."""
     evt = db.query(SecurityEventModel).filter(SecurityEventModel.event_id == event_id).first()
     if not evt:
@@ -46,7 +49,7 @@ def get_event(event_id: str, db: Session = Depends(get_db)):
     return SecurityEventResponse.model_validate(evt)
 
 @router.post("/execute", response_model=ToolCallResponse)
-def execute_tool_call(req: ToolCallRequest, db: Session = Depends(get_db)):
+def execute_tool_call(req: ToolCallRequest, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     """
     Submits a tool call to the zero-trust execution gateway.
     Action is evaluated and blocked or executed before returning.

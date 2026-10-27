@@ -7,8 +7,12 @@ import {
   FlaskConical,
   BarChart3,
   Share2,
-  Lock
+  Lock,
+  LogOut,
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export type NavTab =
   | 'overview'
@@ -30,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onTabChange,
   openIncidentsCount = 0
 }) => {
+  const { user, logout, isAdmin } = useAuth();
   const navItems = [
     {
       id: 'overview' as NavTab,
@@ -119,15 +124,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Footer Security Policy Note */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-950/40 text-[11px] text-slate-400">
-        <div className="flex items-center space-x-2 text-slate-300 font-mono text-[10px] mb-1">
-          <Lock className="w-3 h-3 text-emerald-400" />
-          <span>ZERO-TRUST POLICY ACTIVE</span>
+      {/* User Session & Role Card */}
+      <div className="border-t border-slate-800/80 bg-slate-950/60 p-3 space-y-3">
+        {user && (
+          <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+            <div className="flex items-center space-x-2.5 truncate">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                  isAdmin
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                    : 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+                }`}
+              >
+                {isAdmin ? <ShieldCheck className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+              </div>
+              <div className="truncate">
+                <div className="text-xs font-medium text-slate-200 truncate">
+                  {user.full_name || user.username}
+                </div>
+                <div className="flex items-center space-x-1.5 mt-0.5">
+                  <span
+                    className={`text-[9px] font-mono px-1 py-0.2 rounded border font-semibold ${
+                      isAdmin
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        : 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                    }`}
+                  >
+                    {user.role}
+                  </span>
+                  <span className="text-[10px] text-slate-500 truncate">@{user.username}</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Policy Note */}
+        <div className="text-[10px] text-slate-500">
+          <div className="flex items-center space-x-1 text-slate-400 font-mono mb-1">
+            <Lock className="w-3 h-3 text-emerald-400" />
+            <span>ZERO-TRUST ENFORCED</span>
+          </div>
+          <p className="leading-tight text-[10px]">
+            {isAdmin
+              ? 'Administrator privilege active. Policy configuration & containment authorized.'
+              : 'Analyst privilege active. Investigation & telemetry authorized.'}
+          </p>
         </div>
-        <p className="leading-tight">
-          All agent tool invocations must satisfy least-privilege policies before execution.
-        </p>
       </div>
     </aside>
   );
