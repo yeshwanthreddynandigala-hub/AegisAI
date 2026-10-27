@@ -73,6 +73,7 @@ export interface OverviewStats {
   blocked_operations_count: number;
   high_critical_alerts_count: number;
   total_incidents_count: number;
+  pending_approvals_count?: number;
   decision_distribution: Record<string, number>;
   threat_category_distribution: Record<string, number>;
   recent_incidents: Incident[];
@@ -208,4 +209,32 @@ export interface RegisterPayload {
   password: string;
   full_name?: string;
   role?: UserRole;
+}
+
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'EXECUTED' | 'FAILED';
+
+export interface ApprovalRequest {
+  approval_id: string;
+  event_id: string;
+  agent_id: string;
+  session_id: string;
+  task_id: string;
+  tool_name: string;
+  parameters: Record<string, any>;
+  resource?: string;
+  status: ApprovalStatus;
+  decision_reason?: string;
+  risk_indicators: string[];
+  created_at: string;
+  expires_at: string;
+  reviewed_by_user_id?: string;
+  reviewed_by_username?: string;
+  reviewed_at?: string;
+  review_justification?: string;
+  execution_output?: string;
+  failure_reason?: string;
+}
+
+export interface ApprovalDecisionPayload {
+  justification: string;
 }

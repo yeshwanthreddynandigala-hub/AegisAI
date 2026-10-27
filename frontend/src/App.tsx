@@ -10,12 +10,34 @@ import { IncidentInvestigationPage } from './pages/IncidentInvestigationPage';
 import { SimulationLabPage } from './pages/SimulationLabPage';
 import { EvaluationCenterPage } from './pages/EvaluationCenterPage';
 import { ThreatCorrelationPage } from './pages/ThreatCorrelationPage';
+import { ApprovalsInboxPage } from './pages/ApprovalsInboxPage';
+import { api } from './services/api';
 import { Shield } from 'lucide-react';
 
 const MainDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('overview');
   const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState<number>(0);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+  const [openIncidentsCount, setOpenIncidentsCount] = useState<number>(0);
+
+  const fetchBadgeCounts = async () => {
+    try {
+      const stats = await api.getOverviewStats();
+      if (stats.pending_approvals_count !== undefined) {
+        setPendingApprovalsCount(stats.pending_approvals_count);
+      }
+      if (stats.high_critical_alerts_count !== undefined) {
+        setOpenIncidentsCount(stats.high_critical_alerts_count);
+      }
+    } catch {
+      // Ignore background badge fetch errors
+    }
+  };
+
+  React.useEffect(() => {
+    fetchBadgeCounts();
+  }, [refreshKey, activeTab]);
 
   const handleNavigateToIncident = (incidentId: string) => {
     setFocusedIncidentId(incidentId);
@@ -37,6 +59,8 @@ const MainDashboard: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           activeTab={activeTab}
+          openIncidentsCount={openIncidentsCount}
+          pendingApprovalsCount={pendingApprovalsCount}
           onTabChange={(tab) => {
             setActiveTab(tab);
             if (tab !== 'incidents') {
@@ -63,6 +87,8 @@ const MainDashboard: React.FC = () => {
               onClearIncidentSelection={() => setFocusedIncidentId(null)}
             />
           )}
+
+          {activeTab === 'approvals' && <ApprovalsInboxPage />}
 
           {activeTab === 'simulations' && (
             <SimulationLabPage onNavigateToIncident={handleNavigateToIncident} />

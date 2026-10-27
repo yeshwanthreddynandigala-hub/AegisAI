@@ -18,6 +18,7 @@ from app.api.simulations import router as simulations_router
 from app.api.evaluation import router as evaluation_router
 from app.api.threat_intel import router as threat_intel_router
 from app.api.overview import router as overview_router
+from app.api.approvals import router as approvals_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -57,6 +58,7 @@ app.include_router(incidents_router, prefix="/api/v1")
 app.include_router(simulations_router, prefix="/api/v1")
 app.include_router(evaluation_router, prefix="/api/v1")
 app.include_router(threat_intel_router, prefix="/api/v1")
+app.include_router(approvals_router, prefix="/api/v1")
 
 @app.get("/api/v1/health")
 def health_check():

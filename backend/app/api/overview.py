@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.models.agent import AgentModel
 from app.models.event import SecurityEventModel
 from app.models.incident import IncidentModel
+from app.models.approval import ApprovalRequestModel
 from app.models.user import UserModel
 from app.schemas.incident import IncidentResponse
 from app.schemas.event import SecurityEventResponse
@@ -39,6 +40,11 @@ def get_overview_statistics(db: Session = Depends(get_db), current_user: UserMod
     ).count()
 
     total_incidents = db.query(IncidentModel).count()
+
+    # Pending approvals
+    pending_approvals_count = db.query(ApprovalRequestModel).filter(
+        ApprovalRequestModel.status == "PENDING"
+    ).count()
 
     # Recent incidents
     recent_incidents = db.query(IncidentModel).order_by(
@@ -71,6 +77,7 @@ def get_overview_statistics(db: Session = Depends(get_db), current_user: UserMod
         "blocked_operations_count": blocked_count,
         "high_critical_alerts_count": high_critical_count,
         "total_incidents_count": total_incidents,
+        "pending_approvals_count": pending_approvals_count,
         "decision_distribution": decision_map,
         "threat_category_distribution": category_map,
         "recent_incidents": [IncidentResponse.model_validate(inc) for inc in recent_incidents],

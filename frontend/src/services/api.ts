@@ -11,7 +11,8 @@ import {
   User,
   TokenResponse,
   LoginPayload,
-  RegisterPayload
+  RegisterPayload,
+  ApprovalRequest
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -161,5 +162,27 @@ export const api = {
     }),
 
   // Threat Intel
-  getThreatGraph: (): Promise<ThreatGraphData> => fetchJson<ThreatGraphData>('/threat-intel/graph')
+  getThreatGraph: (): Promise<ThreatGraphData> => fetchJson<ThreatGraphData>('/threat-intel/graph'),
+
+  // Approvals (HITL)
+  getApprovals: (params?: { status?: string; agent_id?: string; limit?: number }): Promise<ApprovalRequest[]> => {
+    const query = new URLSearchParams();
+    if (params?.status) query.append('status', params.status);
+    if (params?.agent_id) query.append('agent_id', params.agent_id);
+    if (params?.limit) query.append('limit', params.limit.toString());
+    const qStr = query.toString() ? `?${query.toString()}` : '';
+    return fetchJson<ApprovalRequest[]>(`/approvals${qStr}`);
+  },
+  getApproval: (approvalId: string): Promise<ApprovalRequest> =>
+    fetchJson<ApprovalRequest>(`/approvals/${approvalId}`),
+  approveRequest: (approvalId: string, justification: string): Promise<ApprovalRequest> =>
+    fetchJson<ApprovalRequest>(`/approvals/${approvalId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ justification })
+    }),
+  rejectRequest: (approvalId: string, justification: string): Promise<ApprovalRequest> =>
+    fetchJson<ApprovalRequest>(`/approvals/${approvalId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ justification })
+    })
 };

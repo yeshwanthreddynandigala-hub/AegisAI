@@ -2,6 +2,7 @@ from app.schemas.agent import AgentCreate, AgentResponse, PolicyManifestCreate, 
 from app.schemas.event import ToolCallRequest, ToolCallResponse, SecurityEventResponse, EventFilterParams
 from app.schemas.incident import IncidentCreate, IncidentResponse, IncidentInvestigationDetail, InvestigateRequest
 from app.schemas.simulation import SimulationScenario, SimulationRunRequest, SimulationRunResult, BenchmarkEvaluationSummary
+from app.schemas.approval import ApprovalDecisionRequest, ApprovalRequestResponse
 
 __all__ = [
     "AgentCreate",
@@ -19,5 +20,7 @@ __all__ = [
     "SimulationScenario",
     "SimulationRunRequest",
     "SimulationRunResult",
-    "BenchmarkEvaluationSummary"
+    "BenchmarkEvaluationSummary",
+    "ApprovalDecisionRequest",
+    "ApprovalRequestResponse"
 ]

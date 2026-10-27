@@ -23,6 +23,7 @@ class ToolCallResponse(BaseModel):
     risk_indicators: List[str] = Field(default_factory=list)
     incident_created: bool = False
     incident_id: Optional[str] = None
+    approval_id: Optional[str] = None
 
 class SecurityEventResponse(BaseModel):
     event_id: str

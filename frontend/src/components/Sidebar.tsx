@@ -4,6 +4,7 @@ import {
   Terminal,
   Bot,
   AlertOctagon,
+  ClipboardCheck,
   FlaskConical,
   BarChart3,
   Share2,
@@ -19,6 +20,7 @@ export type NavTab =
   | 'live_events'
   | 'agents'
   | 'incidents'
+  | 'approvals'
   | 'simulations'
   | 'evaluation'
   | 'threat_intel';
@@ -27,12 +29,14 @@ interface SidebarProps {
   activeTab: NavTab;
   onTabChange: (tab: NavTab) => void;
   openIncidentsCount?: number;
+  pendingApprovalsCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
-  openIncidentsCount = 0
+  openIncidentsCount = 0,
+  pendingApprovalsCount = 0
 }) => {
   const { user, logout, isAdmin } = useAuth();
   const navItems = [
@@ -61,6 +65,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: openIncidentsCount > 0 ? openIncidentsCount : undefined,
       badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
       description: 'Attack timelines & citations'
+    },
+    {
+      id: 'approvals' as NavTab,
+      label: 'Approvals Inbox',
+      icon: ClipboardCheck,
+      badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
+      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse',
+      description: 'Human-in-the-loop (HITL) gate'
     },
     {
       id: 'simulations' as NavTab,
