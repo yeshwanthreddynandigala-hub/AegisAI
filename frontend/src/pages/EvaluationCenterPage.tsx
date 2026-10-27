@@ -14,6 +14,7 @@ import {
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { api } from '../services/api';
 import { BenchmarkSummary } from '../types';
+import { formatLocalDateTime } from '../utils/dateUtils';
 
 export const EvaluationCenterPage: React.FC = () => {
   const [benchmark, setBenchmark] = useState<BenchmarkSummary | null>(null);
@@ -151,7 +152,9 @@ export const EvaluationCenterPage: React.FC = () => {
                   Direct evaluation of each detector across the exact same scenario runs.
                 </p>
               </div>
-              <span className="text-[10px] font-mono text-slate-400">MEASURED AT {benchmark.timestamp}</span>
+              <span className="text-[10px] font-mono text-slate-400">
+                MEASURED AT {formatLocalDateTime(benchmark.timestamp)} ({benchmark.timestamp})
+              </span>
             </div>
 
             <div className="overflow-x-auto">

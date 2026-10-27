@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { SecurityEvent } from '../types';
+import { TimestampDisplay } from '../components/TimestampDisplay';
+import { formatLocalDateTime, formatUtcDateTime, isHistoricalDemoEvent } from '../utils/dateUtils';
 
 export const LiveMonitorPage: React.FC = () => {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -161,7 +163,11 @@ export const LiveMonitorPage: React.FC = () => {
                         }`}
                       >
                         <td className="py-2.5 px-3 text-slate-400 text-[10px] whitespace-nowrap">
-                          {new Date(e.timestamp).toLocaleTimeString()}
+                          <TimestampDisplay
+                            timestamp={e.timestamp}
+                            sessionId={e.session_id}
+                            taskId={e.task_id}
+                          />
                         </td>
                         <td className="py-2.5 px-3 text-sky-400 font-semibold">{e.agent_id}</td>
                         <td className="py-2.5 px-3">
@@ -250,6 +256,32 @@ export const LiveMonitorPage: React.FC = () => {
                 <span className="text-slate-500 text-[10px]">EVENT ID</span>
                 <div className="text-slate-300 break-all bg-slate-950 p-1.5 rounded border border-slate-800 text-[11px]">
                   {selectedEvent.event_id}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-500 text-[10px]">TIMESTAMP SPECIFICATION</span>
+                <div className="bg-slate-950 p-2 rounded border border-slate-800 text-[10px] space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Local Browser Time:</span>
+                    <span className="text-slate-200 font-bold">{formatLocalDateTime(selectedEvent.timestamp)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">UTC Stored Time:</span>
+                    <span className="text-sky-400 font-mono">{formatUtcDateTime(selectedEvent.timestamp)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-slate-800/80">
+                    <span className="text-slate-500">Provenance:</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                      isHistoricalDemoEvent(selectedEvent.timestamp, selectedEvent.session_id, selectedEvent.task_id)
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    }`}>
+                      {isHistoricalDemoEvent(selectedEvent.timestamp, selectedEvent.session_id, selectedEvent.task_id)
+                        ? 'SYNTHETIC HISTORICAL DEMO'
+                        : 'LIVE EXECUTION SESSION'}
+                    </span>
+                  </div>
                 </div>
               </div>
 

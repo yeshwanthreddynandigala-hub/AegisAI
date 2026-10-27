@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Incident, IncidentDetail } from '../types';
+import { formatLocalDateTime, formatUtcDateTime, isHistoricalDemoEvent } from '../utils/dateUtils';
 
 interface IncidentInvestigationPageProps {
   initialIncidentId?: string | null;
@@ -148,9 +149,16 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
                     >
                       {inc.severity}
                     </span>
-                    <span className="font-mono text-[10px] text-slate-400">
-                      {new Date(inc.created_at).toLocaleTimeString()}
-                    </span>
+                    <div className="flex flex-col items-end">
+                      <span className="font-mono text-[10px] text-slate-300">
+                        {formatLocalDateTime(inc.created_at)}
+                      </span>
+                      {isHistoricalDemoEvent(inc.created_at, inc.session_id) && (
+                        <span className="mt-0.5 px-1 py-0.2 rounded text-[8px] font-mono tracking-wider uppercase bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          HISTORICAL DEMO
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <h3 className="font-semibold text-xs text-slate-100 line-clamp-1">{inc.title}</h3>
@@ -178,6 +186,10 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
                       </span>
                       <span className="text-slate-600">•</span>
                       <span className="font-mono text-xs text-slate-400">ID: {detail.incident_id.slice(0, 12)}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="font-mono text-xs text-slate-400">
+                        Recorded: {formatLocalDateTime(detail.created_at)} ({formatUtcDateTime(detail.created_at)})
+                      </span>
                     </div>
                     <h2 className="text-base font-bold text-white mt-1">{detail.title}</h2>
                   </div>
@@ -280,9 +292,14 @@ export const IncidentInvestigationPage: React.FC<IncidentInvestigationPageProps>
                                 </span>
                               )}
                             </div>
-                            <span className="font-mono text-[10px] text-slate-400">
-                              {new Date(evt.timestamp).toLocaleTimeString()} UTC
-                            </span>
+                            <div className="flex flex-col items-end">
+                              <span className="font-mono text-[10px] font-semibold text-slate-200">
+                                {formatLocalDateTime(evt.timestamp)}
+                              </span>
+                              <span className="font-mono text-[9px] text-slate-500">
+                                {formatUtcDateTime(evt.timestamp)}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="text-xs font-mono text-slate-300 mb-2">

@@ -3,16 +3,16 @@ Database Models for Security Telemetry and Audit Events.
 Provides tamper-resistant, structured audit logs for all agent tool requests and executions.
 """
 
-from sqlalchemy import Column, String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import Column, String, Text, JSON, ForeignKey
 from datetime import datetime, timezone
 import uuid
-from app.core.database import Base
+from app.core.database import Base, UTCDateTime
 
 class SecurityEventModel(Base):
     __tablename__ = "security_events"
 
     event_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    timestamp = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), index=True)
     agent_id = Column(String(64), index=True, nullable=False)
     session_id = Column(String(64), index=True, nullable=False)
     task_id = Column(String(64), index=True, nullable=False)

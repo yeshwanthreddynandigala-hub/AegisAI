@@ -133,7 +133,8 @@ class IncidentCorrelationEngine:
 
             # Append summary update
             rule_names = ", ".join(r.name for r in triggered_rules) if triggered_rules else "Policy block"
-            existing_incident.summary += f" | Follow-up: {rule_names} triggered at {current_event.timestamp.strftime('%H:%M:%S')}."
+            ts_str = current_event.timestamp.strftime('%H:%M:%S UTC') if current_event.timestamp else "recent"
+            existing_incident.summary += f" | Follow-up: {rule_names} triggered at {ts_str}."
             existing_incident.updated_at = datetime.now(timezone.utc)
 
             # Link event to incident

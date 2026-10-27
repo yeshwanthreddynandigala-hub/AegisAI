@@ -2,9 +2,9 @@
 Pydantic Schemas for Security Telemetry Events.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 class ToolCallRequest(BaseModel):
     agent_id: str
@@ -42,6 +42,14 @@ class SecurityEventResponse(BaseModel):
     parent_event_id: Optional[str] = None
     source_of_input: str
     related_incident_id: Optional[str] = None
+
+    @field_serializer("timestamp")
+    def serialize_timestamp(self, dt: datetime) -> str:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
     model_config = ConfigDict(from_attributes=True)
 

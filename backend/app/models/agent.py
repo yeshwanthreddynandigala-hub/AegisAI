@@ -3,9 +3,9 @@ Database Models for Agents and Security Policies.
 Defines agent identities, authorized scopes, and access control policies.
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, JSON
+from sqlalchemy import Column, String, Integer, Boolean, Text, JSON
 from datetime import datetime, timezone
-from app.core.database import Base
+from app.core.database import Base, UTCDateTime
 
 class AgentModel(Base):
     __tablename__ = "agents"
@@ -16,8 +16,8 @@ class AgentModel(Base):
     description = Column(Text, nullable=True)
     authorized_objective = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class PolicyManifestModel(Base):
     __tablename__ = "policy_manifests"
@@ -42,4 +42,4 @@ class PolicyManifestModel(Base):
     
     # Denial threshold before session quarantine
     max_denial_threshold = Column(Integer, default=3)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))

@@ -13,6 +13,7 @@ import {
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, PieChart, Pie } from 'recharts';
 import { api } from '../services/api';
 import { OverviewStats, Incident } from '../types';
+import { formatLocalDateTime } from '../utils/dateUtils';
 
 interface OverviewPageProps {
   onNavigateToIncident: (incidentId: string) => void;
@@ -263,8 +264,11 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                     onClick={() => onNavigateToIncident(inc.incident_id)}
                     className="hover:bg-slate-800/50 cursor-pointer transition-colors"
                   >
-                    <td className="py-3 px-3 font-medium text-slate-100 flex items-center space-x-2 truncate max-w-xs">
+                    <td className="py-3 px-3 font-medium text-slate-100 flex flex-col justify-center truncate max-w-xs">
                       <span className="truncate">{inc.title}</span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {formatLocalDateTime(inc.created_at)}
+                      </span>
                     </td>
                     <td className="py-3 px-3 font-mono text-sky-400 text-[11px]">{inc.agent_id}</td>
                     <td className="py-3 px-3">

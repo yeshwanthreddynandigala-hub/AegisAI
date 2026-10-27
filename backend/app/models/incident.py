@@ -3,10 +3,10 @@ Database Models for Security Incidents and Attack Timelines.
 Represents correlated clusters of suspicious telemetry events with causal evidence.
 """
 
-from sqlalchemy import Column, String, DateTime, Text, JSON, Float
+from sqlalchemy import Column, String, Text, JSON, Float
 from datetime import datetime, timezone
 import uuid
-from app.core.database import Base
+from app.core.database import Base, UTCDateTime
 
 class IncidentModel(Base):
     __tablename__ = "incidents"
@@ -30,5 +30,5 @@ class IncidentModel(Base):
     recommendation = Column(Text, nullable=True)
     investigation_report = Column(Text, nullable=True)
     
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

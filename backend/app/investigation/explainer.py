@@ -81,13 +81,15 @@ class IncidentExplainer:
         for idx, e in enumerate(events, 1):
             flag = "[EVIDENCE CITATION]" if e.event_id in evidence_ids else "[CONTEXT]"
             outcome = f"{e.policy_decision} ({e.execution_status})"
+            ts_str = e.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') if e.timestamp else "N/A"
             timeline_md.append(
-                f"{idx}. **[{e.timestamp.strftime('%H:%M:%S UTC')}]** `{e.event_id[:8]}` {flag}: "
+                f"{idx}. **[{ts_str}]** `{e.event_id[:8]}` {flag}: "
                 f"Tool `{e.tool_name}` targeting `{e.resource}` -> Gateway Decision: **{outcome}**"
             )
 
+        created_str = incident.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if incident.created_at else "N/A"
         report = f"""# Incident Investigation Dossier: {incident.incident_id}
-**Classification**: {incident.primary_threat_category} | **Severity**: {incident.severity} | **Confidence**: {incident.confidence_score * 100:.0f}%
+**Recorded**: {created_str} | **Classification**: {incident.primary_threat_category} | **Severity**: {incident.severity} | **Confidence**: {incident.confidence_score * 100:.0f}%
 **Agent Identity**: `{incident.agent_id}` ({agent.role if agent else 'Unknown Role'})
 **Session ID**: `{incident.session_id}`
 **Mitigation State**: `{incident.mitigation_status}`
@@ -148,7 +150,7 @@ During execution, telemetry captured anomalous or unauthorized actions outside t
         event_summaries = [
             {
                 "event_id": e.event_id,
-                "timestamp": e.timestamp.isoformat(),
+                "timestamp": e.timestamp.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z') if e.timestamp else "N/A",
                 "tool": e.tool_name,
                 "resource": e.resource,
                 "policy_decision": e.policy_decision,

@@ -5,6 +5,7 @@ Maintains graph relations strictly for behavioral patterns without fabricating a
 """
 
 from typing import List, Dict, Any, Set
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.incident import IncidentModel
@@ -49,7 +50,7 @@ class ThreatIntelligenceCorrelator:
                 "severity": inc.severity,
                 "category": inc.primary_threat_category,
                 "agent_id": inc.agent_id,
-                "created_at": inc.created_at.isoformat()
+                "created_at": inc.created_at.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z') if inc.created_at else None
             })
 
         # 2. Add Category Nodes
