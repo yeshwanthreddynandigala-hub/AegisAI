@@ -1,27 +1,33 @@
 # AegisAI: Autonomous AI Agent Behavioral Security & Threat Investigation Platform
+
 ### An Empirical Research & Engineering Platform for Zero-Trust Tool Mediation, Human-in-the-Loop Governance, and Multi-Step Behavioral Attack Detection
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.14-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.143-009688.svg)](https://fastapi.tiangolo.com)
-[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.143-009688.svg)](https://fastapi.tiangolo.com/)
+[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178c6.svg)](https://www.typescriptlang.org/)
 [![Tests](https://img.shields.io/badge/tests-69%20passed-brightgreen.svg)](https://docs.pytest.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
 ## 1. Research Overview & Problem Statement
 
-As autonomous AI agents acquire capabilities to execute tools (filesystem reading/writing, database queries, web browsing, REST API requests, and calculation), they expose critical security vulnerabilities:
-1. **Indirect Prompt Injection**: Adversarial instructions hidden inside ingested untrusted documents or web pages hijack agent intent and trigger unauthorized downstream tool invocations.
-2. **Privilege Creep & Scope Violations**: Agents request operations outside their mandated operational objective (e.g. attempting to read internal compensation records during a document summarization task).
-3. **Multi-Step Behavioral Sequences**: Advanced agent compromise rarely occurs in a single step; attackers stage stealthy reconnaissance, probe file structures, read credentials, and exfiltrate data through sequences where each individual tool invocation appears benign in isolation.
-4. **Passive Observability Gaps**: Traditional security monitoring only flags an attack *after* it executes. A resilient AI security architecture requires **zero-trust pre-execution mediation** where high-privilege actions are intercepted, evaluated, and paused or blocked before touching resources.
+As autonomous AI agents acquire the ability to execute tools—including filesystem operations, database queries, web requests, and calculations—they introduce new security challenges.
+
+AegisAI investigates the use of zero-trust mediation, behavioral analysis, and human oversight to help control potentially unsafe agent actions.
+
+Key challenges include:
+
+1. **Indirect Prompt Injection:** Malicious instructions embedded in untrusted documents or web pages may influence an agent to perform unauthorized operations.
+2. **Privilege Creep and Scope Violations:** An agent may attempt operations outside its intended task or assigned permissions.
+3. **Multi-Step Behavioral Attacks:** Reconnaissance, credential probing, and attempted data exfiltration may occur as sequences of individually plausible tool calls.
+4. **Passive Observability Gaps:** Detecting an attack only after an operation executes may be too late. Security controls should evaluate sensitive actions before execution whenever possible.
 
 ### Core Research Questions
-* **Primary Question**: Can combining least-privilege authorization policies, stateful behavioral sequence analysis, and unsupervised ML anomaly detection detect and prevent suspicious AI-agent behavior more effectively than isolated rule-based filtering?
-* **Secondary Question**: Can the multi-engine system generalize to detect previously unseen zero-day attack sequences that were not explicitly encoded into static rule signatures?
-* **Governance Question**: Can Human-in-the-Loop (HITL) approval workflows safely pause high-privilege agent operations while preventing race conditions, double execution, credential leaks, and process-interruption deadlocks?
+
+* **Primary:** Can least-privilege policies, behavioral sequence analysis, and unsupervised anomaly detection improve the identification and prevention of suspicious AI-agent behavior?
+* **Secondary:** How do these detection approaches perform on held-out attack scenarios not explicitly encoded into static detection rules?
+* **Governance:** Can human-in-the-loop approval workflows safely pause sensitive operations while preventing duplicate execution, race conditions, and unsafe recovery after interruptions?
 
 ---
 
@@ -29,277 +35,415 @@ As autonomous AI agents acquire capabilities to execute tools (filesystem readin
 
 ```mermaid
 flowchart TD
-    User["Orchestrator / Task Objective"] --> Agent["Controlled AI Agent (Workflow Runner)"]
+    User["Orchestrator / Task Objective"] --> Agent["Controlled AI Agent"]
 
-    subgraph MediationLayer ["Zero-Trust Tool Execution Gateway"]
-        Agent -->|"Tool Call Intent (tool, args, context)"| Gateway["Tool Execution Gateway"]
-        Gateway --> SchemaValidator["Strict Pydantic Schema Validator (extra='forbid')"]
-        SchemaValidator --> Sanitizer["Credential Sanitizer & Secret Filter"]
-        Sanitizer --> PolicyEngine["Authorization Policy Engine"]
-        PolicyEngine -->|"ALLOW / DENY / REQUIRE_APPROVAL"| Gateway
-        Gateway -->|"If REQUIRE_APPROVAL"| HITL["HITL Approval Queue (Atomic CAS State Machine)"]
-        Gateway -->|"If ALLOW"| Sandbox["Synthetic Isolated Sandbox (Docs, Mock DB, Sinks)"]
+    subgraph MediationLayer["Zero-Trust Tool Execution Gateway"]
+        Agent --> Gateway["Tool Execution Gateway"]
+        Gateway --> Schema["Strict Pydantic Schema Validation"]
+        Schema --> Sanitizer["Credential Sanitizer"]
+        Sanitizer --> Policy["Authorization Policy Engine"]
+        Policy --> Decision{"Policy Decision"}
+
+        Decision -->|ALLOW| Sandbox["Synthetic Sandbox"]
+        Decision -->|DENY| Block["Block Operation"]
+        Decision -->|REQUIRE_APPROVAL| HITL["HITL Approval Queue"]
+
+        HITL --> Revalidate["Policy Revalidation"]
+        Revalidate --> Sandbox
     end
 
-    subgraph TelemetryLayer ["Event Pipeline & Audit Store"]
-        Gateway -->|"Structured Telemetry Event"| AuditDB[("SQLite / PostgreSQL Audit Log")]
-        HITL -->|"Review Decision & Outcome"| AuditDB
+    subgraph TelemetryLayer["Telemetry and Audit"]
+        Gateway --> Events[("SQLite Audit Store")]
+        HITL --> Events
+        Sandbox --> Events
+        Block --> Events
     end
 
-    subgraph DetectionLayer ["Multi-Engine Detection Pipeline"]
-        AuditDB --> RuleEngine["Engine 1: Signature Rules (Rules A-G)"]
-        AuditDB --> SequenceEngine["Engine 2: Behavioral State Trajectory Analyzer"]
-        AuditDB --> MLEngine["Engine 3: ML Anomaly Detector (Isolation Forest)"]
-        RuleEngine --> CorrelationEngine["Incident Correlation Engine"]
-        SequenceEngine --> CorrelationEngine
-        MLEngine --> CorrelationEngine
+    subgraph DetectionLayer["Detection Pipeline"]
+        Events --> Rules["Rule-Based Detection"]
+        Events --> Sequence["Behavioral Sequence Analysis"]
+        Events --> ML["ML Anomaly Detection"]
+
+        Rules --> Correlation["Incident Correlation"]
+        Sequence --> Correlation
+        ML --> Correlation
     end
 
-    subgraph InvestigationLayer ["Incident Dossier & Intelligence Center"]
-        CorrelationEngine --> Incidents[("Incident & Timeline Store")]
-        Incidents --> Explainer["Evidence-Grounded Explainer (Offline + Optional LLM)"]
-        Incidents --> ThreatIntel["Cross-Incident Behavioral Graph"]
+    subgraph InvestigationLayer["Investigation"]
+        Correlation --> Incidents["Incident Timeline"]
+        Incidents --> Dossier["Evidence-Grounded Investigation"]
+        Incidents --> ThreatIntel["Behavioral Threat Correlation"]
     end
 
-    subgraph PresentationLayer ["SecOps Security Operations Console"]
-        Incidents -.-> API["FastAPI REST Services (/api/v1)"]
-        AuditDB -.-> API
-        HITL -.-> API
-        API --> UI["React / TypeScript / Tailwind Dark-Theme Console"]
+    subgraph PresentationLayer["Security Operations Console"]
+        Incidents --> API["FastAPI REST API"]
+        Events --> API
+        HITL --> API
+        API --> UI["React / TypeScript Console"]
     end
 ```
+
+### High-Level Request Flow
+
+1. An agent proposes a tool operation.
+2. The gateway validates the tool and its arguments.
+3. The authorization policy engine evaluates the requested action.
+4. The operation is allowed, denied, or paused for human approval.
+5. Security events and execution outcomes are recorded.
+6. Detection engines analyze events and behavioral sequences.
+7. Related events are correlated into incidents for investigation.
 
 ---
 
 ## 3. Component Architecture & Responsibilities
 
-| Component | Responsibility | Guarantees & Constraints |
-| :--- | :--- | :--- |
-| **Controlled AI Agent** (`app.agent.controlled_agent`) | Executes simulated goal-directed tasks (document summarization, database analysis) strictly via tool requests. | Possesses **zero** direct access to host OS, subprocesses, sockets, or real files. |
-| **Synthetic Sandbox** (`app.agent.environment`) | Sandboxed directory holding public files, private audit reports, synthetic test honeytokens, and mock enterprise database. | Enforces canonical directory containment via `os.path.commonpath`. Traversal attempts raise immediate errors. |
-| **Tool Execution Gateway** (`app.security.gateway`) | Zero-trust mediator intercepting all tool invocations before execution. Evaluates policy, verifies parameter schemas, redacts credentials, and manages execution lifecycle. | Fail-closed: Unmapped tools, invalid parameter types, unexpected kwargs, or policy violations default to `DENY` before reaching resources. |
-| **Strict Tool Validator** (`app.schemas.tools`) | Typed Pydantic V2 schemas with `extra="forbid"` for all 8 agent tools. | Blocks parameter injection, enforces URL scheme whitelists (`http`/`https`), and validates numerical bounds. |
-| **Secret Sanitizer** (`app.core.sanitizer`) | Recursive secret redaction utility masking tokens, AWS keys, private keys, passwords, and URL credentials across logs, API serialization, and errors. | Disallows unencrypted sensitive credentials from entering deferred approval storage. |
-| **HITL Approval Engine** (`app.security.gateway`) | Manages deferred execution for high-privilege actions (e.g. filesystem writes, destructive queries). Implements atomic Compare-and-Swap state transitions (`PENDING -> IN_PROGRESS -> EXECUTED`). | Prevents duplicate execution under multi-threaded concurrency. Enforces 5-minute lease timeout with fail-closed recovery. |
-| **Authorization Policy Engine** (`app.security.policy_engine`) | Evaluates proposed operations against agent manifests: tool whitelists, resource globs, allowed operations, and anti-brute force thresholds. | Deterministic least-privilege evaluation returning `ALLOW`, `DENY`, or `REQUIRE_APPROVAL`. |
-| **Rule-Based Detector** (`app.security.rule_detector`) | Detects known signatures: credential probing (Rule B), unapproved exfiltration (Rule C), sandbox escapes (Rule F), repeated denial storms (Rule E). | Zero latency, high precision, produces exact policy clause explanations. |
-| **Behavioral Sequence Analyzer** (`app.security.sequence_detector`) | Translates events into behavioral state trajectories (`BENIGN_READ -> SCOPE_PROBE -> CREDENTIAL_PROBE`) to identify multi-step escalation attacks. | Detects threats that appear benign when evaluated as isolated tool calls. |
-| **ML Anomaly Detector** (`app.security.ml_detector`) | Extracts 8 engineered behavioral features per session; employs Isolation Forest and statistical deviance to detect out-of-distribution drift. | Generalizes to novel zero-day trajectories without hardcoded keyword rules. |
-| **Incident Correlation Engine** (`app.security.correlation_engine`) | Correlates security events within a session, builds chronological attack graphs, links evidence event IDs, and assigns risk severity tiers. | Automatically escalates severity upon multi-vector triggers and locks down quarantined sessions. |
-| **Investigation Dossier Engine** (`app.investigation.explainer`) | Reconstructs chronological timelines citing verified event IDs. Features reproducible offline narrative synthesis and optional external LLM provider integration. | Hallucination-resistant: Factual assertions strictly reference verified database `event_id` records. |
-| **Threat Intelligence Correlator** (`app.investigation.threat_intel`) | Computes Jaccard/cosine behavioral overlap and clusters incidents by shared targets and sequence patterns. | Behavioral similarity only: explicitly disclaims real-world human attribution. |
-| **Simulation Lab & Benchmarks** (`app.evaluation.benchmark_runner`) | Runs standardized benchmark suites across benign workflows, prompt injections, and unseen attack trajectories. | Computes empirical Precision, Recall, F1, FPR, FNR, Latency, and Gateway Blocking Effectiveness. |
+| Component                          | Responsibility                                                                                                 |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Controlled AI Agent**            | Executes simulated tasks through controlled tool requests.                                                     |
+| **Synthetic Sandbox**              | Provides mock resources, test documents, honeytokens, and simulated enterprise data.                           |
+| **Tool Execution Gateway**         | Mediates tool calls before execution and applies authorization decisions.                                      |
+| **Strict Tool Validator**          | Uses typed Pydantic schemas to validate tool arguments and reject unexpected parameters.                       |
+| **Secret Sanitizer**               | Redacts sensitive-looking credentials and tokens from supported logs, responses, and errors.                   |
+| **HITL Approval Engine**           | Manages approval-required operations, reviewer decisions, execution states, and recovery from stale approvals. |
+| **Authorization Policy Engine**    | Evaluates tool permissions, resource restrictions, and operation scopes.                                       |
+| **Rule-Based Detector**            | Identifies known suspicious patterns using configured rules.                                                   |
+| **Behavioral Sequence Analyzer**   | Examines sequences of tool events to identify potentially suspicious multi-step behavior.                      |
+| **ML Anomaly Detector**            | Uses engineered behavioral features and an Isolation Forest model to identify anomalous activity.              |
+| **Incident Correlation Engine**    | Connects related security events and creates incident timelines.                                               |
+| **Investigation Dossier Engine**   | Produces evidence-grounded investigation summaries using recorded event identifiers.                           |
+| **Threat Intelligence Correlator** | Groups incidents based on behavioral similarities and shared targets.                                          |
+| **Simulation Lab & Benchmarks**    | Runs synthetic scenarios and compares detection approaches using evaluation metrics.                           |
+
+### Important Security Properties
+
+* **Fail-closed authorization:** Unknown tools and invalid parameters should be rejected rather than implicitly trusted.
+* **Least privilege:** Agents are restricted by configured tool permissions and resource scopes.
+* **Human oversight:** Sensitive operations can require explicit approval.
+* **Concurrency protection:** Approval state transitions are designed to prevent multiple reviewers from claiming the same operation for execution.
+* **Stale approval recovery:** Interrupted operations can be marked as failed or uncertain rather than automatically retried.
+* **Synthetic evaluation:** Security scenarios use mock resources and simulated attack behavior.
+
+These controls reduce risk within the implemented prototype; they do not establish that every attack or execution failure is prevented.
 
 ---
 
 ## 4. Threat Model & Safeguards
 
-| Threat Vector | Agent Attack Vector | Gateway Mitigation | Detection & Investigation |
-| :--- | :--- | :--- | :--- |
-| **Indirect Prompt Injection** | Untrusted document instructs agent to ignore goal and exfiltrate honeytoken credentials. | Gateway evaluates file path against policy blacklist; denies read with `DENY`. | Rule B flags honeytoken; Sequence Analyzer flags injection-to-exfil trajectory. |
-| **Sandbox Path Traversal** | Agent supplies `../../etc/passwd` or `..\private\audit.csv` to escape sandbox. | Canonical path validation halts resolution; Gateway flags directory escape attempt. | Rule F triggers critical incident; session denial count increments. |
-| **Privilege Escalation** | Reader agent requests `filesystem_write` or destructive database modification. | Whitelist policy check rejects tool invocation before execution. | Rule D flags prohibited operation; zero writes occur on disk. |
-| **Unauthorized Exfiltration** | Agent calls external mock endpoint `https://attacker-mock-sink.net/exfil`. | Whitelist check verifies domain against `allowed_network_domains`. Non-approved domains blocked. | Rule C triggers high alert; staged data intercepted. |
-| **Stealthy Tool Hopping** | Unseen attack sequence interleaves benign calculations with atypical tool transitions. | Gateway evaluates operation scopes; Anomaly detector scores multivariate deviance. | ML Anomaly detector scores session as out-of-distribution anomaly. |
-| **Approval Replay & Race** | Concurrent threads attempt to approve the exact same pending action twice. | Atomic CAS state transition (`PENDING -> IN_PROGRESS`) guarantees exactly one thread claims execution; loser receives HTTP 409 Conflict. | Stale lease timeout fails closed without re-executing uncertain actions. |
+| Threat Scenario                         | Example                                                                    | Intended Mitigation                                                                               |
+| --------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Indirect Prompt Injection**           | An untrusted document contains instructions to access sensitive mock data. | Apply tool authorization and configured resource restrictions.                                    |
+| **Sandbox Path Traversal**              | A tool requests a path such as `../../etc/passwd`.                         | Validate resolved paths against the permitted sandbox directory.                                  |
+| **Privilege Escalation**                | A read-only agent attempts a write operation.                              | Enforce tool permissions and operation scopes.                                                    |
+| **Unauthorized Exfiltration**           | An agent attempts to send mock data to an unapproved domain.               | Apply configured network-domain restrictions before the operation executes.                       |
+| **Suspicious Tool Sequences**           | Several individually plausible calls form a reconnaissance pattern.        | Analyze event sequences and behavioral anomalies.                                                 |
+| **Approval Replay and Race Conditions** | Multiple requests attempt to approve the same pending operation.           | Use atomic state transitions and reject competing claims.                                         |
+| **Interrupted Approval Execution**      | A process stops while an approval is in progress.                          | Recover stale operations without automatically repeating an operation whose outcome is uncertain. |
+
+**Scope note:** These safeguards apply to the implemented mediation and synthetic execution environment. They should not be interpreted as proof of complete isolation from the host operating system or comprehensive protection against every real-world attack.
 
 ---
 
 ## 5. Getting Started & Installation
 
 ### Prerequisites
-* **Python**: 3.10, 3.11, 3.12, 3.13, or 3.14
-* **Node.js**: v18+ (Node v20 or v22 LTS recommended)
-* **npm**: v9+
 
-### A. Clone and Setup Backend
+* **Python:** 3.10 or newer; compatibility should be verified for the specific version used.
+* **Node.js:** Version 18 or newer.
+* **npm:** A version compatible with the installed Node.js release.
+* **Git:** Required to clone the repository.
+
+### A. Clone the Repository
+
 ```bash
-# Clone the repository
 git clone https://github.com/yeshwanthreddynandigala-hub/AegisAI.git
 cd AegisAI
-
-# Create and activate Python virtual environment
-python -m venv venv
-
-# Windows PowerShell:
-.\venv\Scripts\Activate.ps1
-# Linux / macOS:
-# source venv/bin/activate
-
-# Install all backend dependencies
-pip install -r requirements.txt
 ```
 
-### B. Setup and Build Frontend
+### B. Create a Python Virtual Environment
+
+**Windows PowerShell:**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+**Linux / macOS:**
+
 ```bash
-# From project root:
+python3 -m venv venv
+source venv/bin/activate
+```
+
+If PowerShell blocks virtual-environment activation, you can invoke the environment's Python executable directly instead of changing your system-wide execution policy.
+
+### C. Install Backend Dependencies
+
+From the project root, with the virtual environment activated:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### D. Install Frontend Dependencies
+
+```bash
 cd frontend
 npm install
-npm run build
 ```
+
+Return to the project root before running the backend commands.
 
 ---
 
 ## 6. Running the System
 
-### Step 1: Seed Demonstration Telemetry
-Populate the SQLite database with benchmark scenarios, generating real telemetry, detected incidents, and correlation clusters:
-```bash
-# From AegisAI root directory:
-# Windows PowerShell:
-$env:PYTHONPATH="backend"
+The backend and frontend run in separate terminals.
+
+### Step 1: Initialize Demonstration Data
+
+From the project root:
+
+**Windows PowerShell:**
+
+```powershell
+$env:PYTHONPATH = "backend"
 .\venv\Scripts\python.exe backend/app/core/seed.py
-
-# Linux / macOS:
-# PYTHONPATH=backend python backend/app/core/seed.py
 ```
 
-### Step 2: Start the FastAPI Backend Server
+**Linux / macOS:**
+
 ```bash
-# Windows PowerShell:
-$env:PYTHONPATH="backend"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-
-# Linux / macOS:
-# PYTHONPATH=backend uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+PYTHONPATH=backend python backend/app/core/seed.py
 ```
-Interactive OpenAPI documentation will be accessible at: **`http://127.0.0.1:8000/docs`**
 
-### Step 3: Start the React SecOps Console
-In a separate terminal:
+**Important:** The seed script initializes demonstration data in the configured database. Back up any local data you need before running it.
+
+### Step 2: Start the FastAPI Backend
+
+Open a terminal at the project root.
+
+**Windows PowerShell:**
+
+```powershell
+$env:PYTHONPATH = "backend"
+.\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+**Linux / macOS:**
+
+```bash
+PYTHONPATH=backend python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Interactive API documentation should be available at:
+
+`http://127.0.0.1:8000/docs`
+
+### Step 3: Start the React Console
+
+Open a second terminal:
+
 ```bash
 cd frontend
 npm run dev
 ```
-Open your browser to: **`http://localhost:5173`**
 
-### Step 4: Local Evaluation Authentication
+Open:
 
-> [!WARNING]
-> **Local Evaluation Notice**: The default accounts below are automatically seeded strictly for local testing and evaluation. Before deploying to any external environment, credentials and JWT signing keys must be changed via `.env`.
+`http://localhost:5173`
 
-* **Administrator Account** (Full access to Containment, Agent Registration, Benchmark Runs, and Approvals):
-  - **Username**: `admin`
-  - **Password**: `AdminAegis2026!`
-* **SOC Analyst Account** (Access to Telemetry, Incident Dossiers, Simulations, and Approvals):
-  - **Username**: `analyst`
-  - **Password**: `AnalystAegis2026!`
+### Step 4: Local Demonstration Authentication
+
+> **Local Demo Only:** The application may provide default demonstration accounts through its seed or configuration logic. These accounts are intended for local evaluation only. Do not expose default credentials or development signing keys in a production deployment. Configure unique credentials and a strong, private JWT signing key before external deployment.
+
+Use the demonstration credentials configured by the local seed process. Verify the current values in the project's configuration before relying on them.
 
 ---
 
-## 7. Interactive SecOps Console Walkthrough
+## 7. Interactive Security Operations Console
 
-The React interface provides eight operational cybersecurity centers:
+The React interface provides a set of security monitoring and investigation views.
 
-1. **SOC Overview (`/overview`)**:
-   - Executive posture dashboard with live counters: Monitored Agents, Intercepted Tool Calls, Prevented Actions, and Pending Approvals.
-   - Interactive Recharts visualizations displaying Gateway Enforcement breakdowns (ALLOW vs DENY vs APPROVAL) and Threat Category distributions.
-   - Live recent incident stream with one-click navigation to full investigation dossiers.
+### 7.1 SOC Overview
 
-2. **Live Telemetry Monitor (`/live_events`)**:
-   - High-throughput chronological event feed with filters for Policy Decisions, Execution Statuses, and multi-field text search.
-   - Slide-out Event Telemetry Inspector revealing raw JSON invocation parameters, target resource paths, risk indicator tags, and gateway decision rationales.
+* Displays security and activity counters.
+* Summarizes gateway decisions and threat categories.
+* Provides navigation to incident investigations.
 
-3. **Agent Explorer (`/agents`)**:
-   - Visual inspection of all provisioned AI agent identities, assigned roles, and mandated task objectives.
-   - Least-privilege policy manifests detailing tool whitelists, allowed paths, restricted honeytokens, and quarantine denial thresholds.
+### 7.2 Live Telemetry Monitor
 
-4. **Incident Dossier & Attack Timelines (`/incidents`)**:
-   - Causal chronological attack timelines linking actions across multi-step sessions.
-   - Visual distinguishing tags highlighting primary evidence events versus background context.
-   - One-click **"Investigate Dossier"** button triggering an evidence-grounded report citing verified event IDs and SOC mitigation steps.
+* Presents a chronological event feed.
+* Supports filtering and searching.
+* Displays recorded tool-call details and gateway decisions.
 
-5. **Attack Simulation Lab (`/simulations`)**:
-   - Interactive testbed allowing users to execute benign tasks, indirect prompt injections, credential thefts, path traversals, SQL honeytoken tampers, and unseen zero-day trajectories live against the gateway.
-   - Real-time step-by-step trace showing gateway evaluation, execution status, and created incident links.
+### 7.3 Agent Explorer
 
-6. **Human-in-the-Loop (HITL) Approvals Inbox (`/approvals`)**:
-   - Dedicated governance center managing deferred high-privilege operations requiring human authorization.
-   - Master-detail inspector displaying validated tool parameters, requesting agent identity, policy decision rationale, and risk indicator tags.
-   - Reviewer decision audit trail enforcing mandatory justification logging, reviewer attribution, and status tracking (`PENDING`, `IN_PROGRESS`, `APPROVED`, `REJECTED`, `EXPIRED`, `EXECUTED`, `FAILED`).
-   - Zero-trust revalidation ensures that if policies change between request and approval, execution fails closed.
+* Displays configured agent identities and roles.
+* Shows assigned objectives and policy restrictions.
+* Helps reviewers inspect tool permissions and resource scopes.
 
-7. **Evaluation Center (`/evaluation`)**:
-   - Rigorous scientific benchmarking comparing Rule-Based Baseline, Behavioral Sequence Analyzer, ML Anomaly Detector, and Combined Multi-Engine Defense across identical test scenarios.
-   - Measured Precision, Recall, F1, False Positive Rate (FPR), False Negative Rate (FNR), and Latency tables.
+### 7.4 Incident Dossier & Attack Timelines
 
-8. **Threat Correlation (`/threat_intel`)**:
-   - Topology map connecting related incidents through shared behavioral similarities, targeted resources, and attack categories.
-   - Incorporates strict research disclaimers avoiding fabricated human attribution claims.
+* Displays chronological security-event sequences.
+* Links investigation claims to recorded event identifiers.
+* Provides context for understanding suspicious behavior.
+
+### 7.5 Attack Simulation Lab
+
+* Supports synthetic benign and malicious scenarios.
+* Allows users to examine tool execution decisions.
+* Displays resulting events and related incidents.
+
+### 7.6 Human-in-the-Loop Approvals Inbox
+
+The approval workflow supports operations that require human authorization.
+
+A typical workflow is:
+
+1. A tool request is evaluated by the policy engine.
+2. If approval is required, the operation enters the pending queue.
+3. An authorized reviewer examines the request and its context.
+4. The reviewer approves or rejects the request, with the decision recorded in the audit trail.
+5. Before an approved operation executes, the system revalidates the applicable policy.
+6. Atomic state transitions help prevent multiple reviewers from claiming the same operation.
+7. Stale in-progress approvals can be recovered to a failure or uncertain state without blindly retrying the operation.
+
+The approval workflow is intended to improve accountability and prevent unsafe execution. It does not eliminate every possible failure caused by process termination or external side effects.
+
+### 7.7 Evaluation Center
+
+* Compares configured detection engines.
+* Displays evaluation metrics for tested scenarios.
+* Helps examine the trade-offs between detection, false positives, and latency.
+
+### 7.8 Threat Correlation
+
+* Groups incidents by behavioral similarities.
+* Connects related targets and event sequences.
+* Supports investigation without claiming that behavioral similarity establishes a real-world person's identity.
 
 ---
 
 ## 8. Empirical Research Findings & Benchmark Results
 
-The system evaluates four distinct detection architectures across 11 standardized scenarios (4 benign, 5 known attacks, 2 unseen zero-day trajectories):
+The existing evaluation describes four benign workflows, five known attack scenarios, and two held-out attack trajectories.
 
-| Detection Engine | Precision | Recall | F1 Score | False Positive Rate | False Negative Rate | Unseen Attack Detection | Avg Latency |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Baseline A: Rule-Based Engine** | **1.00** | 0.71 | 0.83 | **0.00** | 0.29 | 0% | **0.42 ms** |
-| **Baseline B: Sequence Analyzer** | 1.00 | 0.57 | 0.73 | 0.00 | 0.43 | 0% | 0.58 ms |
-| **Baseline C: ML Anomaly Detector** | 0.88 | 1.00 | 0.93 | 0.25 | **0.00** | **100%** | 0.85 ms |
-| **Combined Multi-Engine Defense** | **0.88** | **1.00** | **0.93** | 0.25 | **0.00** | **100%** | **0.95 ms** |
+The reported benchmark results are:
 
-*Gateway Blocking Effectiveness*: **100.0%** (All unauthorized operations intercepted before reaching protected resources).
+| Detection Engine              | Precision | Recall | F1 Score | False Positive Rate | False Negative Rate | Held-Out Scenario Detection | Average Latency |
+| ----------------------------- | --------: | -----: | -------: | ------------------: | ------------------: | --------------------------: | --------------: |
+| Rule-Based Engine             |      1.00 |   0.71 |     0.83 |                0.00 |                0.29 |                          0% |         0.42 ms |
+| Behavioral Sequence Analyzer  |      1.00 |   0.57 |     0.73 |                0.00 |                0.43 |                          0% |         0.58 ms |
+| ML Anomaly Detector           |      0.88 |   1.00 |     0.93 |                0.25 |                0.00 |                        100% |         0.85 ms |
+| Combined Multi-Engine Defense |      0.88 |   1.00 |     0.93 |                0.25 |                0.00 |                        100% |         0.95 ms |
 
-### Key Research Conclusions
-1. **The Rule Generalization Gap**: Static rules achieved perfect precision ($1.00$) and low latency ($0.42\text{ ms}$) on known attack signatures, but failed completely on unseen attack trajectories ($0\%$ recall on zero-day tool hopping).
-2. **Value of Behavioral Sequences**: Multi-step state tracking identified stealthy reconnaissance patterns that individual tool call checks missed.
-3. **ML Anomaly Contribution**: Unsupervised multivariate anomaly detection successfully flagged out-of-distribution tool-hopping sequences ($100\%$ unseen attack detection), ensuring zero false negatives on novel evasion vectors.
-4. **Enforcement vs Observability**: The Tool Execution Gateway achieved $100\%$ blocking effectiveness, proving that pre-execution mediation prevents compromise even when detection engines perform complex downstream correlation.
+*These are the results reported by the project's existing benchmark. They should be retained only if they match the actual evaluation output.*
+
+### Interpretation
+
+1. **Rule Generalization:** Static rules performed well on configured signatures but did not identify the held-out attack trajectories in this evaluation.
+2. **Behavioral Sequence Analysis:** Tracking multiple events can reveal suspicious patterns that may not be apparent from an isolated tool call.
+3. **ML Anomaly Detection:** The reported model flagged both held-out attack trajectories. Because only two held-out trajectories were evaluated, this result does not establish generalization to all unseen or real-world attacks.
+4. **Gateway Enforcement:** The reported gateway blocking effectiveness was 100% on the evaluated scenarios. This is a result for that test set, not a guarantee that all unauthorized operations will always be blocked.
+
+### Evaluation Limitations
+
+* The benchmark uses a small, synthetic set of scenarios.
+* Results depend on the configured rules, feature engineering, model settings, and evaluation methodology.
+* A held-out synthetic scenario is not equivalent to a comprehensive real-world zero-day evaluation.
+* Larger and more diverse datasets are needed to establish generalization, robustness, and performance under production workloads.
 
 ---
 
 ## 9. Automated Testing & Verification
 
-The project includes an end-to-end integration and unit test suite verified across 69 automated tests:
+The latest recorded project verification reported **69 backend tests passing**, along with a successful frontend production build.
 
-```bash
-# Run the complete test suite:
-# Windows PowerShell:
-$env:PYTHONPATH="backend"
-.\venv\Scripts\pytest.exe backend/tests -v
+These results describe the recorded verification run; they do not mean the tests were rerun when this README was edited.
 
-# Linux / macOS:
-# PYTHONPATH=backend pytest backend/tests -v
+### Run the Backend Tests
+
+From the project root:
+
+**Windows PowerShell:**
+
+```powershell
+$env:PYTHONPATH = "backend"
+.\venv\Scripts\python.exe -m pytest backend/tests -v
 ```
 
-### Test Suite Coverage:
-* `test_api_endpoints.py` (9 tests): Verifies all REST endpoints, OpenAPI schemas, statistics, and parameter serialization.
-* `test_auth_rbac.py` (15 tests): Tests BCrypt hashing, JWT issuance and validation, expiration, and role-based access control (Admin vs Analyst).
-* `test_end_to_end_pipeline.py` (3 tests): Validates the full detection pipeline from prompt injection to gateway block, incident creation, and evidence citation.
-* `test_hitl_approval.py` (8 tests): Tests operation pausing, zero-trust revalidation, execution lifecycle, and rejection enforcement.
-* `test_phase3_hardening.py` (11 tests): Multi-threaded concurrency race tests (`ThreadPoolExecutor`), atomic CAS state claims, recursive secret redaction, and strict Pydantic parameter schemas.
-* `test_sequence_detector.py` (6 tests): Validates state transition graphs, stealthy multi-vector probing, and surge attacks.
-* `test_stage2_core.py` (6 tests): Tests sandbox directory traversal protections, honeytoken detection, and session quarantine lockout.
-* `test_stale_approval_recovery.py` (7 tests): Validates lease timeouts, fail-closed recovery for abandoned in-progress requests, idempotency, and non-overwriting guarantees.
-* `test_timestamp_consistency.py` (4 tests): Enforces UTC database persistence, ISO 8601 `'Z'` serialization, and chronological event ordering.
+**Linux / macOS:**
+
+```bash
+PYTHONPATH=backend python -m pytest backend/tests -v
+```
+
+### Test Coverage Reported by the Project
+
+| Test Suite                        |  Tests | Focus                                                       |
+| --------------------------------- | -----: | ----------------------------------------------------------- |
+| `test_api_endpoints.py`           |      9 | REST endpoints, API schemas, and serialization              |
+| `test_auth_rbac.py`               |     15 | Password hashing, JWT authentication, and role-based access |
+| `test_end_to_end_pipeline.py`     |      3 | End-to-end security and incident pipeline                   |
+| `test_hitl_approval.py`           |      8 | Approval workflow and policy revalidation                   |
+| `test_phase3_hardening.py`        |     11 | Concurrency, secret redaction, and strict schemas           |
+| `test_sequence_detector.py`       |      6 | Behavioral sequence analysis                                |
+| `test_stage2_core.py`             |      6 | Sandbox restrictions and honeytoken detection               |
+| `test_stale_approval_recovery.py` |      7 | Stale approval recovery and execution-state guarantees      |
+| `test_timestamp_consistency.py`   |      4 | Timestamp persistence and serialization                     |
+| **Total**                         | **69** |                                                             |
+
+### Build the Frontend
+
+From the frontend directory:
+
+```bash
+npm run build
+```
+
+A successful build indicates that the frontend's configured TypeScript and build steps completed. It does not, by itself, prove that every interface flow works correctly at runtime.
 
 ---
 
-## 10. Technology Stack Summary
+## 10. Technology Stack
 
-* **Backend**: Python 3.10+, FastAPI, Pydantic V2, SQLAlchemy 2.0, SQLite (PostgreSQL compatible).
-* **Security & Auth**: BCrypt password hashing, PyJWT tokens, Zero-Trust Tool Execution Gateway.
-* **Machine Learning & Anomaly Detection**: Isolation Forest / Multivariate Statistical Distance with interpretable feature attributions.
-* **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Recharts, Lucide Icons.
-* **Testing**: pytest, anyio, HTTPX async test clients.
+* **Backend:** Python, FastAPI, Pydantic, SQLAlchemy, SQLite.
+* **Security and Authentication:** BCrypt password hashing, JWT authentication, role-based access control, zero-trust tool mediation.
+* **Machine Learning:** Isolation Forest and engineered behavioral features.
+* **Frontend:** React, TypeScript, Vite, Tailwind CSS, Recharts, Lucide Icons.
+* **Testing:** pytest, HTTPX, AnyIO.
+* **Development and Version Control:** Git and GitHub.
 
 ---
 
 ## 11. Research Prototype Notice & Limitations
 
-AegisAI is an empirical research and demonstration platform developed to investigate autonomous AI agent security architectures.
+AegisAI is an educational and empirical research prototype for investigating security controls around autonomous AI-agent behavior.
 
-* **Single-Node SQLite Architecture**: Default deployment uses local SQLite for zero-dependency local operation. For distributed multi-tenant production, configure `DATABASE_URL` with PostgreSQL.
-* **Synthetic Sandbox Isolation**: Filesystem isolation is enforced via directory traversal boundaries and synthetic resource sinks. For mission-critical production execution, pair AegisAI with microVM isolation (e.g. Firecracker or gVisor).
-* **Host Side-Effect Rollback**: In the event of an abrupt process termination (e.g. host power failure mid-write), AegisAI fails closed and flags the operation as uncertain; host filesystem rollbacks require underlying transactional snapshotting.
+### Deployment Constraints
+
+* **Database Architecture:** The default setup uses local SQLite. A different database configuration may be needed for distributed or multi-user deployments.
+* **Sandbox Isolation:** The project uses a synthetic environment and filesystem path restrictions. These are not equivalent to a dedicated operating-system sandbox or microVM boundary.
+* **Host Side Effects:** If a process terminates during an operation, the final outcome may be uncertain. Marking an operation as failed does not necessarily reverse an external side effect.
+* **Detection Generalization:** Synthetic benchmark performance does not establish detection against every real-world or previously unseen attack.
+* **Authentication Configuration:** Default demonstration settings must not be reused for production deployment.
+* **Operational Readiness:** Production use would require additional security testing, deployment hardening, monitoring, and review of data-handling requirements.
+
+The system is intended to demonstrate security architecture concepts and provide a basis for further experimentation, not to serve as a certified production security boundary.
 
 ---
 
 ## 12. License & Academic Integrity
 
-
-This project was developed as an educational and empirical research software system studying autonomous AI agent behavior security and zero-trust mediation architectures.
+This project was developed as an educational and empirical research software system studying autonomous AI-agent behavior security and zero-trust mediation architectures.
 
 No open-source license has been specified for this repository yet.
+
+---
+
+## Project Summary
+
+**AegisAI** explores how zero-trust tool authorization, behavioral sequence analysis, anomaly detection, incident correlation, and human approval can work together to improve the security and accountability of autonomous AI-agent operations.
+
+The project combines a Python/FastAPI backend, a React/TypeScript security console, a synthetic testing environment, and an automated test suite to support experimentation with AI-agent security controls.
