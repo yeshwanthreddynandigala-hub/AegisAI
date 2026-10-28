@@ -158,7 +158,7 @@ $env:PYTHONPATH="backend"
 ```bash
 # Windows PowerShell:
 $env:PYTHONPATH="backend"
-.\venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 # Linux / macOS:
 # PYTHONPATH=backend uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
