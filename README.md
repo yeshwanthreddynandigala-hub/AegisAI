@@ -115,7 +115,7 @@ flowchart TD
 ### A. Clone and Setup Backend
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/AegisAI.git
+git clone https://github.com/yeshwanthreddynandigala-hub/AegisAI.git
 cd AegisAI
 
 # Create and activate Python virtual environment
