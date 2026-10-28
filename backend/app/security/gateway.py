@@ -19,6 +19,9 @@ from app.schemas.event import ToolCallRequest, ToolCallResponse
 from app.security.policy_engine import policy_engine
 from app.security.rule_detector import rule_detector
 from app.agent.tools import tool_registry
+from app.core.sanitizer import redact_secrets, contains_sensitive_secrets
+from app.schemas.tools import validate_tool_parameters
+
 
 class ToolExecutionGateway:
     """Zero-trust mediator for all agent interactions."""
@@ -47,18 +50,56 @@ class ToolExecutionGateway:
         """Sanitizes execution output preview to prevent leaking credentials into audit logs."""
         if output is None:
             return ""
-        s = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
-        # Redact simulated key tokens if accidentally present
-        for secret_token in ["AKIA_MOCK", "EXAMPLEKEY", "P@ssw0rdSynthetic", "synthetic_hash"]:
-            if secret_token in s:
-                s = s.replace(secret_token, "[REDACTED_SIMULATED_SECRET]")
+        sanitized = redact_secrets(output)
+        s = json.dumps(sanitized) if isinstance(sanitized, (dict, list)) else str(sanitized)
         return s[:1200]
 
     def dispatch_tool_call(self, db: Session, request: ToolCallRequest) -> ToolCallResponse:
         """
         Primary execution entry point.
-        Evaluates policy BEFORE execution and records structured audit events.
+        Evaluates parameter schema, policy, and secret leaks BEFORE execution,
+        and records structured audit events.
         """
+        # 0. Strict Parameter Schema Validation (Fail Closed)
+        is_valid, err_msg, validated_params = validate_tool_parameters(request.tool_name, request.parameters)
+        if not is_valid:
+            event_id = str(uuid.uuid4())
+            resource = self._extract_resource(
+                request.tool_name,
+                request.parameters if isinstance(request.parameters, dict) else {}
+            )
+            audit_event = SecurityEventModel(
+                event_id=event_id,
+                timestamp=datetime.now(timezone.utc),
+                agent_id=request.agent_id,
+                session_id=request.session_id,
+                task_id=request.task_id,
+                action_type="TOOL_CALL_DENIED",
+                tool_name=request.tool_name,
+                resource=resource,
+                requested_operation="EXECUTE",
+                parameters=redact_secrets(request.parameters) if isinstance(request.parameters, dict) else {},
+                policy_decision="DENY",
+                execution_status="BLOCKED",
+                execution_output=f"BLOCKED BY GATEWAY: {err_msg}",
+                risk_indicators=["INVALID_TOOL_PARAMETERS"],
+                source_of_input=request.source_of_input
+            )
+            db.add(audit_event)
+            db.commit()
+            db.refresh(audit_event)
+
+            return ToolCallResponse(
+                event_id=event_id,
+                policy_decision="DENY",
+                execution_status="BLOCKED",
+                decision_reason=err_msg or "Invalid tool parameters.",
+                output=None,
+                risk_indicators=["INVALID_TOOL_PARAMETERS"]
+            )
+
+        request_params = validated_params
+
         # 1. Fetch Agent and Policy Manifest
         policy = db.query(PolicyManifestModel).filter(
             PolicyManifestModel.agent_id == request.agent_id
@@ -88,11 +129,11 @@ class ToolExecutionGateway:
         policy_result = policy_engine.evaluate(
             policy=policy,
             tool_name=request.tool_name,
-            parameters=request.parameters,
+            parameters=request_params,
             session_denial_count=session_denial_count
         )
 
-        resource = self._extract_resource(request.tool_name, request.parameters)
+        resource = self._extract_resource(request.tool_name, request_params)
         event_id = str(uuid.uuid4())
 
         # Determine operation verb
@@ -116,7 +157,7 @@ class ToolExecutionGateway:
                 tool_name=request.tool_name,
                 resource=resource,
                 requested_operation=op_verb,
-                parameters=request.parameters,
+                parameters=redact_secrets(request_params),
                 policy_decision="DENY",
                 execution_status="BLOCKED",
                 execution_output=f"BLOCKED BY GATEWAY: {policy_result.message}",
@@ -145,6 +186,39 @@ class ToolExecutionGateway:
 
         # 5. Handle Human Approval Required
         elif policy_result.decision == "REQUIRE_APPROVAL":
+            # Guard against persisting unencrypted credentials to deferred approval queue
+            if contains_sensitive_secrets(request_params):
+                deny_reason = "Unencrypted sensitive credentials or secrets cannot be submitted for deferred approval."
+                audit_event = SecurityEventModel(
+                    event_id=event_id,
+                    timestamp=datetime.now(timezone.utc),
+                    agent_id=request.agent_id,
+                    session_id=request.session_id,
+                    task_id=request.task_id,
+                    action_type="TOOL_CALL_DENIED",
+                    tool_name=request.tool_name,
+                    resource=resource,
+                    requested_operation=op_verb,
+                    parameters=redact_secrets(request_params),
+                    policy_decision="DENY",
+                    execution_status="BLOCKED",
+                    execution_output=f"BLOCKED BY GATEWAY: {deny_reason}",
+                    risk_indicators=["CREDENTIAL_LEAK_PREVENTION", "SENSITIVE_SECRET_EXPOSURE"],
+                    source_of_input=request.source_of_input
+                )
+                db.add(audit_event)
+                db.commit()
+                db.refresh(audit_event)
+
+                return ToolCallResponse(
+                    event_id=event_id,
+                    policy_decision="DENY",
+                    execution_status="BLOCKED",
+                    decision_reason=deny_reason,
+                    output=None,
+                    risk_indicators=["CREDENTIAL_LEAK_PREVENTION", "SENSITIVE_SECRET_EXPOSURE"]
+                )
+
             now_utc = datetime.now(timezone.utc)
             audit_event = SecurityEventModel(
                 event_id=event_id,
@@ -156,7 +230,7 @@ class ToolExecutionGateway:
                 tool_name=request.tool_name,
                 resource=resource,
                 requested_operation=op_verb,
-                parameters=request.parameters,
+                parameters=redact_secrets(request_params),
                 policy_decision="REQUIRE_APPROVAL",
                 execution_status="PENDING",
                 execution_output="Awaiting analyst approval before execution.",
@@ -174,7 +248,7 @@ class ToolExecutionGateway:
                 session_id=request.session_id,
                 task_id=request.task_id,
                 tool_name=request.tool_name,
-                parameters=request.parameters,
+                parameters=request_params,
                 resource=resource,
                 decision_reason=policy_result.message,
                 risk_indicators=policy_result.risk_indicators,
@@ -207,7 +281,7 @@ class ToolExecutionGateway:
             )
 
         try:
-            raw_output = tool_func(**request.parameters)
+            raw_output = tool_func(**request_params)
             exec_status = "EXECUTED" if raw_output.get("status") == "success" else "FAILED"
         except Exception as e:
             raw_output = {"status": "error", "error": str(e)}
@@ -223,7 +297,7 @@ class ToolExecutionGateway:
             tool_name=request.tool_name,
             resource=resource,
             requested_operation=op_verb,
-            parameters=request.parameters,
+            parameters=redact_secrets(request_params),
             policy_decision="ALLOW",
             execution_status=exec_status,
             execution_output=self._sanitize_output_for_audit(raw_output),
@@ -259,8 +333,10 @@ class ToolExecutionGateway:
     ) -> ApprovalRequestModel:
         """
         Processes human approval for a pending tool invocation.
+        Performs atomic CAS state transition (PENDING -> IN_PROGRESS) to prevent race conditions.
         Performs strict zero-trust revalidation against current policy before executing in the sandbox.
-        Prevents replay, race conditions, expired execution, and unverified parameter execution.
+        Tool execution is performed OUTSIDE the database transaction.
+        Sets status to EXECUTED only upon confirmed execution success, or FAILED on error.
         """
         approval = db.query(ApprovalRequestModel).filter(
             ApprovalRequestModel.approval_id == approval_id
@@ -268,6 +344,13 @@ class ToolExecutionGateway:
 
         if not approval:
             raise HTTPException(status_code=404, detail=f"Approval request '{approval_id}' not found.")
+
+        # Check if another reviewer/thread is actively executing this request
+        if approval.status == ApprovalStatus.IN_PROGRESS.value:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Approval request '{approval_id}' is currently being processed by another reviewer or thread."
+            )
 
         # Check idempotency / double execution prevention
         if approval.status != ApprovalStatus.PENDING.value:
@@ -284,40 +367,88 @@ class ToolExecutionGateway:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
         if now_utc > expires_at:
-            approval.status = ApprovalStatus.EXPIRED.value
-            approval.failure_reason = f"Request expired at {expires_at.isoformat()}."
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id,
+                ApprovalRequestModel.status == ApprovalStatus.PENDING.value
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.EXPIRED.value,
+                ApprovalRequestModel.failure_reason: f"Request expired at {expires_at.isoformat()}."
+            })
             db.commit()
             raise HTTPException(
                 status_code=400,
                 detail=f"Approval request '{approval_id}' has expired and cannot be executed."
             )
 
-        # Revalidation 1: Agent & Policy Manifest must exist and be active
+        # Atomic Compare-and-Swap: PENDING -> IN_PROGRESS
+        rows_affected = db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id,
+            ApprovalRequestModel.status == ApprovalStatus.PENDING.value
+        ).update({
+            ApprovalRequestModel.status: ApprovalStatus.IN_PROGRESS.value,
+            ApprovalRequestModel.reviewed_by_user_id: reviewer.user_id,
+            ApprovalRequestModel.reviewed_by_username: reviewer.username,
+            ApprovalRequestModel.reviewed_at: now_utc,
+            ApprovalRequestModel.review_justification: justification
+        })
+        db.commit()
+
+        if rows_affected == 0:
+            current = db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).first()
+            if current and current.status == ApprovalStatus.IN_PROGRESS.value:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Approval request '{approval_id}' is currently being processed by another reviewer or thread."
+                )
+            current_status = current.status if current else "UNKNOWN"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Approval request '{approval_id}' has already been processed with status '{current_status}'."
+            )
+
+        # Revalidation 1: Tool Parameters Schema
+        is_valid, err_msg, validated_params = validate_tool_parameters(approval.tool_name, approval.parameters)
+        if not is_valid:
+            fail_msg = f"Parameter revalidation failed: {err_msg}"
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.FAILED.value,
+                ApprovalRequestModel.failure_reason: fail_msg
+            })
+            db.commit()
+            raise HTTPException(status_code=400, detail=fail_msg)
+
+        # Revalidation 2: Agent & Policy Manifest must exist and be active
         agent = db.query(AgentModel).filter(AgentModel.agent_id == approval.agent_id).first()
         if not agent or not agent.is_active:
-            approval.status = ApprovalStatus.FAILED.value
-            approval.failure_reason = f"Revalidation failed: Agent '{approval.agent_id}' does not exist or is deactivated."
-            approval.reviewed_by_user_id = reviewer.user_id
-            approval.reviewed_by_username = reviewer.username
-            approval.reviewed_at = now_utc
-            approval.review_justification = justification
+            fail_msg = f"Revalidation failed: Agent '{approval.agent_id}' does not exist or is deactivated."
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.FAILED.value,
+                ApprovalRequestModel.failure_reason: fail_msg
+            })
             db.commit()
-            raise HTTPException(status_code=400, detail=approval.failure_reason)
+            raise HTTPException(status_code=400, detail=fail_msg)
 
         policy = db.query(PolicyManifestModel).filter(
             PolicyManifestModel.agent_id == approval.agent_id
         ).first()
         if not policy:
-            approval.status = ApprovalStatus.FAILED.value
-            approval.failure_reason = f"Revalidation failed: Policy manifest for agent '{approval.agent_id}' not found."
-            approval.reviewed_by_user_id = reviewer.user_id
-            approval.reviewed_by_username = reviewer.username
-            approval.reviewed_at = now_utc
-            approval.review_justification = justification
+            fail_msg = f"Revalidation failed: Policy manifest for agent '{approval.agent_id}' not found."
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.FAILED.value,
+                ApprovalRequestModel.failure_reason: fail_msg
+            })
             db.commit()
-            raise HTTPException(status_code=400, detail=approval.failure_reason)
+            raise HTTPException(status_code=400, detail=fail_msg)
 
-        # Revalidation 2: Session Quarantine & Policy Evaluation
+        # Revalidation 3: Session Quarantine & Policy Evaluation
         prior_events = db.query(SecurityEventModel).filter(
             SecurityEventModel.session_id == approval.session_id
         ).all()
@@ -329,84 +460,95 @@ class ToolExecutionGateway:
         reval = policy_engine.evaluate(
             policy=policy,
             tool_name=approval.tool_name,
-            parameters=approval.parameters,
+            parameters=validated_params,
             session_denial_count=session_denial_count
         )
 
         if reval.decision == "DENY":
-            approval.status = ApprovalStatus.FAILED.value
-            approval.failure_reason = f"Security policy revalidation DENIED: {reval.message}"
-            approval.reviewed_by_user_id = reviewer.user_id
-            approval.reviewed_by_username = reviewer.username
-            approval.reviewed_at = now_utc
-            approval.review_justification = justification
+            fail_msg = f"Security policy revalidation DENIED: {reval.message}"
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.FAILED.value,
+                ApprovalRequestModel.failure_reason: fail_msg
+            })
             db.commit()
-            raise HTTPException(status_code=400, detail=approval.failure_reason)
+            raise HTTPException(status_code=400, detail=fail_msg)
 
-        # Revalidation 3: Tool Function Must Exist
+        # Revalidation 4: Tool Function Must Exist
         tool_func = getattr(tool_registry, approval.tool_name, None)
         if not tool_func:
-            approval.status = ApprovalStatus.FAILED.value
-            approval.failure_reason = f"Tool function '{approval.tool_name}' not implemented in tool registry."
-            approval.reviewed_by_user_id = reviewer.user_id
-            approval.reviewed_by_username = reviewer.username
-            approval.reviewed_at = now_utc
-            approval.review_justification = justification
+            fail_msg = f"Tool function '{approval.tool_name}' not implemented in tool registry."
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.FAILED.value,
+                ApprovalRequestModel.failure_reason: fail_msg
+            })
             db.commit()
-            raise HTTPException(status_code=500, detail=approval.failure_reason)
+            raise HTTPException(status_code=500, detail=fail_msg)
 
-        # Audit Review Metadata
-        approval.reviewed_by_user_id = reviewer.user_id
-        approval.reviewed_by_username = reviewer.username
-        approval.reviewed_at = now_utc
-        approval.review_justification = justification
-        approval.status = ApprovalStatus.APPROVED.value
-
-        # Execute Safely within Synthetic Environment
+        # Execute Safely within Synthetic Environment (OUTSIDE DB TRANSACTION)
+        exec_success = False
         try:
-            raw_output = tool_func(**approval.parameters)
-            if raw_output.get("status") == "success":
-                approval.status = ApprovalStatus.EXECUTED.value
-                approval.execution_output = self._sanitize_output_for_audit(raw_output)
+            raw_output = tool_func(**validated_params)
+            if isinstance(raw_output, dict) and raw_output.get("status") == "success":
+                exec_success = True
+                final_status = ApprovalStatus.EXECUTED.value
+                execution_output_str = self._sanitize_output_for_audit(raw_output)
+                fail_reason = None
             else:
-                approval.status = ApprovalStatus.FAILED.value
-                approval.failure_reason = raw_output.get("error", "Tool returned failure status.")
-                approval.execution_output = self._sanitize_output_for_audit(raw_output)
+                exec_success = False
+                final_status = ApprovalStatus.FAILED.value
+                fail_reason = raw_output.get("error", "Tool returned failure status.") if isinstance(raw_output, dict) else "Tool returned failure."
+                execution_output_str = self._sanitize_output_for_audit(raw_output)
         except Exception as e:
-            approval.status = ApprovalStatus.FAILED.value
-            approval.failure_reason = str(e)
-            approval.execution_output = f"Execution exception: {str(e)}"
+            exec_success = False
+            final_status = ApprovalStatus.FAILED.value
+            fail_reason = str(e)
+            execution_output_str = f"Execution exception: {str(e)}"
+
+        # Final Database Updates
+        db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id
+        ).update({
+            ApprovalRequestModel.status: final_status,
+            ApprovalRequestModel.execution_output: execution_output_str,
+            ApprovalRequestModel.failure_reason: fail_reason
+        })
 
         # Update Original Security Event
         original_event = db.query(SecurityEventModel).filter(
             SecurityEventModel.event_id == approval.event_id
         ).first()
         if original_event:
-            original_event.execution_status = approval.status
-            original_event.execution_output = approval.execution_output or approval.failure_reason
+            original_event.execution_status = final_status
+            original_event.execution_output = execution_output_str or fail_reason
 
         # Append Paired Audit Event for HITL Resolution
         audit_resolution = SecurityEventModel(
             event_id=str(uuid.uuid4()),
-            timestamp=now_utc,
+            timestamp=datetime.now(timezone.utc),
             agent_id=approval.agent_id,
             session_id=approval.session_id,
             task_id=approval.task_id,
-            action_type="TOOL_CALL_APPROVED_AND_EXECUTED" if approval.status == ApprovalStatus.EXECUTED.value else "TOOL_CALL_APPROVED_EXECUTION_FAILED",
+            action_type="TOOL_CALL_APPROVED_AND_EXECUTED" if exec_success else "TOOL_CALL_APPROVED_EXECUTION_FAILED",
             tool_name=approval.tool_name,
             resource=approval.resource,
             requested_operation=original_event.requested_operation if original_event else "WRITE",
-            parameters=approval.parameters,
+            parameters=redact_secrets(validated_params),
             policy_decision="ALLOW",
-            execution_status=approval.status,
-            execution_output=approval.execution_output or approval.failure_reason,
+            execution_status=final_status,
+            execution_output=execution_output_str or fail_reason,
             risk_indicators=approval.risk_indicators,
             source_of_input=f"REVIEWER:{reviewer.username}"
         )
         db.add(audit_resolution)
         db.commit()
-        db.refresh(approval)
 
+        approval = db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id
+        ).first()
         return approval
 
     def reject_tool_call(
@@ -418,6 +560,8 @@ class ToolExecutionGateway:
     ) -> ApprovalRequestModel:
         """
         Processes human rejection for a pending tool invocation.
+        Performs atomic CAS state transition (PENDING -> REJECTED) to prevent race conditions.
+        Returns HTTP 409 if the approval is currently IN_PROGRESS.
         Guarantees that rejected operations are never dispatched to tools.
         """
         approval = db.query(ApprovalRequestModel).filter(
@@ -426,6 +570,13 @@ class ToolExecutionGateway:
 
         if not approval:
             raise HTTPException(status_code=404, detail=f"Approval request '{approval_id}' not found.")
+
+        # Check if actively being processed
+        if approval.status == ApprovalStatus.IN_PROGRESS.value:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Approval request '{approval_id}' is currently being processed and cannot be rejected."
+            )
 
         # Check idempotency / double decision prevention
         if approval.status != ApprovalStatus.PENDING.value:
@@ -442,20 +593,47 @@ class ToolExecutionGateway:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
         if now_utc > expires_at:
-            approval.status = ApprovalStatus.EXPIRED.value
-            approval.failure_reason = f"Request expired at {expires_at.isoformat()}."
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id,
+                ApprovalRequestModel.status == ApprovalStatus.PENDING.value
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.EXPIRED.value,
+                ApprovalRequestModel.failure_reason: f"Request expired at {expires_at.isoformat()}."
+            })
             db.commit()
             raise HTTPException(
                 status_code=400,
                 detail=f"Approval request '{approval_id}' has expired."
             )
 
-        approval.status = ApprovalStatus.REJECTED.value
-        approval.reviewed_by_user_id = reviewer.user_id
-        approval.reviewed_by_username = reviewer.username
-        approval.reviewed_at = now_utc
-        approval.review_justification = justification
-        approval.failure_reason = f"Explicitly rejected by reviewer {reviewer.username}: {justification}"
+        # Atomic Compare-and-Swap claim to REJECTED
+        rows_affected = db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id,
+            ApprovalRequestModel.status == ApprovalStatus.PENDING.value
+        ).update({
+            ApprovalRequestModel.status: ApprovalStatus.REJECTED.value,
+            ApprovalRequestModel.reviewed_by_user_id: reviewer.user_id,
+            ApprovalRequestModel.reviewed_by_username: reviewer.username,
+            ApprovalRequestModel.reviewed_at: now_utc,
+            ApprovalRequestModel.review_justification: justification,
+            ApprovalRequestModel.failure_reason: f"Explicitly rejected by reviewer {reviewer.username}: {justification}"
+        })
+        db.commit()
+
+        if rows_affected == 0:
+            current = db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).first()
+            if current and current.status == ApprovalStatus.IN_PROGRESS.value:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Approval request '{approval_id}' is currently being processed and cannot be rejected."
+                )
+            current_status = current.status if current else "UNKNOWN"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Approval request '{approval_id}' has already been processed with status '{current_status}'."
+            )
 
         # Update Original Security Event
         original_event = db.query(SecurityEventModel).filter(
@@ -476,7 +654,7 @@ class ToolExecutionGateway:
             tool_name=approval.tool_name,
             resource=approval.resource,
             requested_operation=original_event.requested_operation if original_event else "WRITE",
-            parameters=approval.parameters,
+            parameters=redact_secrets(approval.parameters),
             policy_decision="DENY",
             execution_status="BLOCKED",
             execution_output=f"REJECTED BY REVIEWER ({reviewer.username}): {justification}",
@@ -485,8 +663,11 @@ class ToolExecutionGateway:
         )
         db.add(audit_resolution)
         db.commit()
-        db.refresh(approval)
 
+        approval = db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id
+        ).first()
         return approval
+
 
 gateway = ToolExecutionGateway()

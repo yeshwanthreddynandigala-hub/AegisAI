@@ -124,6 +124,13 @@ export const ApprovalsInboxPage: React.FC = () => {
             <span>PENDING REVIEW</span>
           </span>
         );
+      case 'IN_PROGRESS':
+        return (
+          <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            <span>PROCESSING</span>
+          </span>
+        );
       case 'EXECUTED':
         return (
           <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
@@ -218,7 +225,7 @@ export const ApprovalsInboxPage: React.FC = () => {
       {/* Filter Tabs and Search Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#0d121f] p-3 rounded-xl border border-slate-800">
         <div className="flex items-center space-x-1 overflow-x-auto w-full sm:w-auto">
-          {['ALL', 'PENDING', 'EXECUTED', 'REJECTED', 'EXPIRED', 'FAILED'].map((st) => (
+          {['ALL', 'PENDING', 'IN_PROGRESS', 'EXECUTED', 'REJECTED', 'EXPIRED', 'FAILED'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -451,6 +458,13 @@ export const ApprovalsInboxPage: React.FC = () => {
                     <ClipboardCheck className="w-4 h-4 text-sky-400" />
                     <span>REVIEW AUDIT TRAIL</span>
                   </div>
+
+                  {selectedApproval.status === 'IN_PROGRESS' && (
+                    <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono flex items-center space-x-2">
+                      <RefreshCw className="w-4 h-4 shrink-0 animate-spin text-cyan-400" />
+                      <span>Request is actively executing in sandbox environment.</span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3 text-xs font-mono">
                     <div>

@@ -3,6 +3,7 @@ from app.schemas.event import ToolCallRequest, ToolCallResponse, SecurityEventRe
 from app.schemas.incident import IncidentCreate, IncidentResponse, IncidentInvestigationDetail, InvestigateRequest
 from app.schemas.simulation import SimulationScenario, SimulationRunRequest, SimulationRunResult, BenchmarkEvaluationSummary
 from app.schemas.approval import ApprovalDecisionRequest, ApprovalRequestResponse
+from app.schemas.tools import validate_tool_parameters, SUPPORTED_TOOL_SCHEMAS
 
 __all__ = [
     "AgentCreate",
@@ -22,5 +23,7 @@ __all__ = [
     "SimulationRunResult",
     "BenchmarkEvaluationSummary",
     "ApprovalDecisionRequest",
-    "ApprovalRequestResponse"
+    "ApprovalRequestResponse",
+    "validate_tool_parameters",
+    "SUPPORTED_TOOL_SCHEMAS"
 ]

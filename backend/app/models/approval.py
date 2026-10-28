@@ -15,6 +15,7 @@ from app.core.database import Base, UTCDateTime
 
 class ApprovalStatus(str, enum.Enum):
     PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"

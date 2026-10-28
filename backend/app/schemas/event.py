@@ -5,6 +5,7 @@ Pydantic Schemas for Security Telemetry Events.
 from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+from app.core.sanitizer import redact_secrets
 
 class ToolCallRequest(BaseModel):
     agent_id: str
@@ -51,6 +52,16 @@ class SecurityEventResponse(BaseModel):
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    @field_serializer("parameters")
+    def serialize_parameters(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return redact_secrets(params)
+
+    @field_serializer("execution_output")
+    def serialize_execution_output(self, out: Optional[str]) -> Optional[str]:
+        if out is None:
+            return None
+        return redact_secrets(out)
 
     model_config = ConfigDict(from_attributes=True)
 

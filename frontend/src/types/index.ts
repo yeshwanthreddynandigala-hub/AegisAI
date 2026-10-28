@@ -211,7 +211,7 @@ export interface RegisterPayload {
   role?: UserRole;
 }
 
-export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'EXECUTED' | 'FAILED';
+export type ApprovalStatus = 'PENDING' | 'IN_PROGRESS' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'EXECUTED' | 'FAILED';
 
 export interface ApprovalRequest {
   approval_id: string;
