@@ -299,4 +299,7 @@ AegisAI is an empirical research and demonstration platform developed to investi
 
 ## 12. License & Academic Integrity
 
-This project is released under the **MIT License**. Created as an educational and empirical research software system studying autonomous AI agent behavior security and zero-trust mediation architectures.
+
+This project was developed as an educational and empirical research software system studying autonomous AI agent behavior security and zero-trust mediation architectures.
+
+No open-source license has been specified for this repository yet.
