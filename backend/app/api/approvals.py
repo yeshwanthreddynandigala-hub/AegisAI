@@ -6,7 +6,7 @@ to inspect, approve, and reject sensitive agent tool invocations before executio
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 from app.core.database import get_db
@@ -31,9 +31,13 @@ def list_approvals(
     """
     Lists approval requests with optional status and agent filtering.
     Accessible to authenticated SecOps Analysts and Administrators.
-    Automatically flags overdue PENDING requests as EXPIRED.
+    Automatically recovers stale abandoned IN_PROGRESS requests to FAILED,
+    and flags overdue PENDING requests as EXPIRED.
     """
     now_utc = datetime.now(timezone.utc)
+
+    # Lazily recover any stale abandoned IN_PROGRESS requests (fail-closed, no auto-retry)
+    gateway.recover_stale_approvals(db)
 
     # Lazily update any expired pending requests
     pending_overdue = db.query(ApprovalRequestModel).filter(
@@ -63,6 +67,9 @@ def get_approval(
     current_user: UserModel = Depends(get_current_user)
 ):
     """Retrieves full details and parameters for a specific approval request."""
+    # First, lazily recover any stale abandoned in-progress approvals
+    gateway.recover_stale_approvals(db)
+
     item = db.query(ApprovalRequestModel).filter(
         ApprovalRequestModel.approval_id == approval_id
     ).first()
@@ -83,6 +90,24 @@ def get_approval(
         db.refresh(item)
 
     return ApprovalRequestResponse.model_validate(item)
+
+
+@router.post("/recover-stale", response_model=Dict[str, Any])
+def trigger_stale_recovery(
+    timeout_seconds: Optional[int] = Query(None, ge=1, le=86400, description="Override lease timeout in seconds"),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Explicit endpoint for SecOps Analysts and Admins to trigger recovery of abandoned IN_PROGRESS requests.
+    Idempotent and safe: transitions abandoned requests to FAILED without re-executing.
+    """
+    recovered_ids = gateway.recover_stale_approvals(db, timeout_seconds=timeout_seconds)
+    return {
+        "status": "success",
+        "recovered_count": len(recovered_ids),
+        "recovered_approval_ids": recovered_ids
+    }
 
 
 @router.post("/{approval_id}/approve", response_model=ApprovalRequestResponse)

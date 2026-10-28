@@ -19,6 +19,7 @@ from app.schemas.event import ToolCallRequest, ToolCallResponse
 from app.security.policy_engine import policy_engine
 from app.security.rule_detector import rule_detector
 from app.agent.tools import tool_registry
+from app.core.config import settings
 from app.core.sanitizer import redact_secrets, contains_sensitive_secrets
 from app.schemas.tools import validate_tool_parameters
 
@@ -345,8 +346,17 @@ class ToolExecutionGateway:
         if not approval:
             raise HTTPException(status_code=404, detail=f"Approval request '{approval_id}' not found.")
 
+        now_utc = datetime.now(timezone.utc)
+
         # Check if another reviewer/thread is actively executing this request
         if approval.status == ApprovalStatus.IN_PROGRESS.value:
+            is_stale, lease_age = self._is_approval_lease_expired(approval, now_utc)
+            if is_stale:
+                self.recover_stale_approvals(db)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Approval request '{approval_id}' timed out while in progress ({lease_age:.1f}s ago) and has been marked FAILED. Operation outcome is uncertain and will not be automatically retried."
+                )
             raise HTTPException(
                 status_code=409,
                 detail=f"Approval request '{approval_id}' is currently being processed by another reviewer or thread."
@@ -358,8 +368,6 @@ class ToolExecutionGateway:
                 status_code=400,
                 detail=f"Approval request '{approval_id}' has already been processed with status '{approval.status}'."
             )
-
-        now_utc = datetime.now(timezone.utc)
 
         # Check expiration
         expires_at = approval.expires_at
@@ -389,6 +397,7 @@ class ToolExecutionGateway:
             ApprovalRequestModel.reviewed_by_user_id: reviewer.user_id,
             ApprovalRequestModel.reviewed_by_username: reviewer.username,
             ApprovalRequestModel.reviewed_at: now_utc,
+            ApprovalRequestModel.execution_started_at: now_utc,
             ApprovalRequestModel.review_justification: justification
         })
         db.commit()
@@ -508,14 +517,24 @@ class ToolExecutionGateway:
             fail_reason = str(e)
             execution_output_str = f"Execution exception: {str(e)}"
 
-        # Final Database Updates
-        db.query(ApprovalRequestModel).filter(
-            ApprovalRequestModel.approval_id == approval_id
+        # Final Database Updates - Atomic transition from IN_PROGRESS
+        rows_updated = db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id,
+            ApprovalRequestModel.status == ApprovalStatus.IN_PROGRESS.value
         ).update({
             ApprovalRequestModel.status: final_status,
             ApprovalRequestModel.execution_output: execution_output_str,
             ApprovalRequestModel.failure_reason: fail_reason
         })
+        db.commit()
+
+        if rows_updated == 0:
+            # Stale recovery or terminal transition occurred while executing tool
+            # Do NOT overwrite terminal status!
+            approval = db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).first()
+            return approval
 
         # Update Original Security Event
         original_event = db.query(SecurityEventModel).filter(
@@ -561,7 +580,7 @@ class ToolExecutionGateway:
         """
         Processes human rejection for a pending tool invocation.
         Performs atomic CAS state transition (PENDING -> REJECTED) to prevent race conditions.
-        Returns HTTP 409 if the approval is currently IN_PROGRESS.
+        Returns HTTP 409 if the approval is currently IN_PROGRESS (and lease active).
         Guarantees that rejected operations are never dispatched to tools.
         """
         approval = db.query(ApprovalRequestModel).filter(
@@ -571,8 +590,17 @@ class ToolExecutionGateway:
         if not approval:
             raise HTTPException(status_code=404, detail=f"Approval request '{approval_id}' not found.")
 
+        now_utc = datetime.now(timezone.utc)
+
         # Check if actively being processed
         if approval.status == ApprovalStatus.IN_PROGRESS.value:
+            is_stale, lease_age = self._is_approval_lease_expired(approval, now_utc)
+            if is_stale:
+                self.recover_stale_approvals(db)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Approval request '{approval_id}' timed out while in progress ({lease_age:.1f}s ago) and has been marked FAILED. Operation outcome is uncertain."
+                )
             raise HTTPException(
                 status_code=409,
                 detail=f"Approval request '{approval_id}' is currently being processed and cannot be rejected."
@@ -584,8 +612,6 @@ class ToolExecutionGateway:
                 status_code=400,
                 detail=f"Approval request '{approval_id}' has already been processed with status '{approval.status}'."
             )
-
-        now_utc = datetime.now(timezone.utc)
 
         # Check expiration
         expires_at = approval.expires_at
@@ -668,6 +694,115 @@ class ToolExecutionGateway:
             ApprovalRequestModel.approval_id == approval_id
         ).first()
         return approval
+
+    def _is_approval_lease_expired(
+        self,
+        approval: ApprovalRequestModel,
+        now_utc: datetime,
+        timeout_seconds: Optional[int] = None
+    ) -> tuple[bool, float]:
+        """
+        Determines if an IN_PROGRESS approval request has exceeded its execution lease timeout.
+        Returns (is_expired, age_in_seconds).
+        """
+        timeout = timeout_seconds if timeout_seconds is not None else settings.in_progress_lease_timeout_seconds
+
+        # Determine reference start timestamp
+        ref_time = getattr(approval, "execution_started_at", None) or approval.reviewed_at or approval.created_at
+        if ref_time is None:
+            return True, float(timeout + 1)
+
+        if ref_time.tzinfo is None:
+            ref_time = ref_time.replace(tzinfo=timezone.utc)
+
+        age_seconds = (now_utc - ref_time).total_seconds()
+
+        # Also check global expires_at
+        expires_at = approval.expires_at
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if now_utc > expires_at:
+                return True, age_seconds
+
+        return (age_seconds > timeout), age_seconds
+
+    def recover_stale_approvals(
+        self,
+        db: Session,
+        timeout_seconds: Optional[int] = None
+    ) -> List[str]:
+        """
+        Scans for and safely transitions abandoned or timed-out IN_PROGRESS approval requests to FAILED.
+        Guarantees:
+        1. Stale requests transition to FAILED, never back to PENDING.
+        2. Never automatically retries an uncertain operation.
+        3. Uses atomic CAS state transitions (WHERE status = 'IN_PROGRESS') to avoid racing with active executions.
+        4. Does not overwrite concurrent terminal transitions.
+        5. Recovery is completely idempotent.
+        """
+        now_utc = datetime.now(timezone.utc)
+        timeout = timeout_seconds if timeout_seconds is not None else settings.in_progress_lease_timeout_seconds
+
+        in_progress_items = db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.status == ApprovalStatus.IN_PROGRESS.value
+        ).all()
+
+        recovered_ids: List[str] = []
+
+        for item in in_progress_items:
+            is_stale, age = self._is_approval_lease_expired(item, now_utc, timeout)
+            if not is_stale:
+                continue
+
+            failure_msg = (
+                f"Execution lease expired after {age:.1f}s (configured timeout: {timeout}s). "
+                "The operation was abandoned or interrupted while IN_PROGRESS. "
+                "The outcome is uncertain and was not automatically retried to prevent duplicate execution."
+            )
+
+            # Atomic CAS update: status must still be IN_PROGRESS
+            rows_affected = db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == item.approval_id,
+                ApprovalRequestModel.status == ApprovalStatus.IN_PROGRESS.value
+            ).update({
+                ApprovalRequestModel.status: ApprovalStatus.FAILED.value,
+                ApprovalRequestModel.failure_reason: failure_msg
+            })
+            db.commit()
+
+            if rows_affected > 0:
+                # Update corresponding original security event
+                orig_event = db.query(SecurityEventModel).filter(
+                    SecurityEventModel.event_id == item.event_id
+                ).first()
+                if orig_event:
+                    orig_event.execution_status = ApprovalStatus.FAILED.value
+                    orig_event.execution_output = failure_msg
+
+                # Append audit resolution event
+                audit_resolution = SecurityEventModel(
+                    event_id=str(uuid.uuid4()),
+                    timestamp=now_utc,
+                    agent_id=item.agent_id,
+                    session_id=item.session_id,
+                    task_id=item.task_id,
+                    action_type="TOOL_CALL_ABANDONED_LEASE_RECOVERED",
+                    tool_name=item.tool_name,
+                    resource=item.resource,
+                    requested_operation=orig_event.requested_operation if orig_event else "UNKNOWN",
+                    parameters=redact_secrets(item.parameters) if isinstance(item.parameters, dict) else {},
+                    policy_decision="DENY",
+                    execution_status="FAILED",
+                    execution_output=failure_msg,
+                    risk_indicators=item.risk_indicators + ["STALE_LEASE_RECOVERY"],
+                    source_of_input="SYSTEM:GATEWAY_RECOVERY"
+                )
+                db.add(audit_resolution)
+                db.commit()
+                recovered_ids.append(item.approval_id)
+
+        return recovered_ids
 
 
 gateway = ToolExecutionGateway()

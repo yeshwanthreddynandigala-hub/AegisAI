@@ -230,6 +230,7 @@ export interface ApprovalRequest {
   reviewed_by_user_id?: string;
   reviewed_by_username?: string;
   reviewed_at?: string;
+  execution_started_at?: string;
   review_justification?: string;
   execution_output?: string;
   failure_reason?: string;

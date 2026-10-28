@@ -28,6 +28,9 @@ class Settings(BaseModel):
     max_policy_denials_before_lockout: int = 3
     ml_model_dir: Path = BASE_DIR / "models_storage"
 
+    # Stale In-Progress Execution Lease Window (Default: 5 minutes / 300 seconds)
+    in_progress_lease_timeout_seconds: int = int(os.getenv("IN_PROGRESS_LEASE_TIMEOUT_SECONDS", "300"))
+
     # Security & Authentication (JWT & RBAC)
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "aegis-ai-dev-secret-key-32-chars-long-minimum!")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")

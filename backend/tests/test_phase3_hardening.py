@@ -209,32 +209,53 @@ def test_conflict_on_in_progress_approval(hardening_fixture):
     init_res = client.post("/api/v1/events/execute", json=tool_req, headers=headers)
     assert init_res.status_code == 200
     approval_id = init_res.json()["approval_id"]
+    event_id = init_res.json().get("event_id")
 
-    # Manually transition to IN_PROGRESS in database to simulate an active execution thread
-    db = SessionLocal()
-    db.query(ApprovalRequestModel).filter(
-        ApprovalRequestModel.approval_id == approval_id
-    ).update({ApprovalRequestModel.status: ApprovalStatus.IN_PROGRESS.value})
-    db.commit()
-    db.close()
+    try:
+        # Manually transition to IN_PROGRESS with an active lease timestamp
+        now_utc = datetime.now(timezone.utc)
+        db = SessionLocal()
+        db.query(ApprovalRequestModel).filter(
+            ApprovalRequestModel.approval_id == approval_id
+        ).update({
+            ApprovalRequestModel.status: ApprovalStatus.IN_PROGRESS.value,
+            ApprovalRequestModel.execution_started_at: now_utc,
+            ApprovalRequestModel.reviewed_at: now_utc
+        })
+        db.commit()
+        db.close()
 
-    # Attempt to approve: Must return 409 Conflict
-    approve_res = client.post(
-        f"/api/v1/approvals/{approval_id}/approve",
-        json={"justification": "Attempting approval while IN_PROGRESS"},
-        headers=headers
-    )
-    assert approve_res.status_code == 409
-    assert "currently being processed" in approve_res.json()["detail"]
+        # Attempt to approve: Must return 409 Conflict
+        approve_res = client.post(
+            f"/api/v1/approvals/{approval_id}/approve",
+            json={"justification": "Attempting approval while IN_PROGRESS"},
+            headers=headers
+        )
+        assert approve_res.status_code == 409
+        assert "currently being processed" in approve_res.json()["detail"]
 
-    # Attempt to reject: Must return 409 Conflict
-    reject_res = client.post(
-        f"/api/v1/approvals/{approval_id}/reject",
-        json={"justification": "Attempting rejection while IN_PROGRESS"},
-        headers=headers
-    )
-    assert reject_res.status_code == 409
-    assert "currently being processed" in reject_res.json()["detail"]
+        # Attempt to reject: Must return 409 Conflict
+        reject_res = client.post(
+            f"/api/v1/approvals/{approval_id}/reject",
+            json={"justification": "Attempting rejection while IN_PROGRESS"},
+            headers=headers
+        )
+        assert reject_res.status_code == 409
+        assert "currently being processed" in reject_res.json()["detail"]
+    finally:
+        # Fixture cleanup: Delete only this test's synthetic records
+        db = SessionLocal()
+        try:
+            db.query(ApprovalRequestModel).filter(
+                ApprovalRequestModel.approval_id == approval_id
+            ).delete()
+            if event_id:
+                db.query(SecurityEventModel).filter(
+                    SecurityEventModel.event_id == event_id
+                ).delete()
+            db.commit()
+        finally:
+            db.close()
 
 
 # -----------------------------------------------------------------------------

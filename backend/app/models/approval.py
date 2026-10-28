@@ -45,6 +45,7 @@ class ApprovalRequestModel(Base):
     status = Column(String(32), default=ApprovalStatus.PENDING.value, nullable=False, index=True)
     created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     expires_at = Column(UTCDateTime, nullable=False, index=True)
+    execution_started_at = Column(UTCDateTime, nullable=True, index=True)
 
     # Review audit
     reviewed_by_user_id = Column(String(36), nullable=True)

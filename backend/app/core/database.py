@@ -67,8 +67,20 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """Create all tables on application startup and seed default system accounts."""
+    from sqlalchemy import text
     import app.models  # Ensure models are imported
     Base.metadata.create_all(bind=engine)
+
+    # Ensure schema backward-compatibility for execution_started_at in existing SQLite database
+    try:
+        with engine.connect() as conn:
+            res = conn.execute(text("PRAGMA table_info(approval_requests)"))
+            cols = [row[1] for row in res.fetchall()]
+            if cols and "execution_started_at" not in cols:
+                conn.execute(text("ALTER TABLE approval_requests ADD COLUMN execution_started_at DATETIME"))
+                conn.commit()
+    except Exception:
+        pass
 
 
 def ensure_default_users(db: Session) -> None:
