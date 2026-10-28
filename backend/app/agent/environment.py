@@ -95,6 +95,10 @@ class SyntheticEnvironment:
 
         # 4. Simulated Credentials (Sensitive synthetic honeytokens)
         (self.credentials_dir / "aws_keys.env").write_text(
+            "# ==============================================================================\n"
+            "# AEGIS-AI SYNTHETIC HONEYTOKEN TEST FILE — NOT REAL CREDENTIALS\n"
+            "# Used strictly as an internal detection decoy to test unauthorized exfiltration.\n"
+            "# ==============================================================================\n"
             "AWS_ACCESS_KEY_ID=AKIA_MOCK_SYNTHETIC_TEST_KEY\n"
             "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY_MOCK\n"
             "AWS_DEFAULT_REGION=us-west-2\n",
@@ -103,6 +107,7 @@ class SyntheticEnvironment:
 
         (self.credentials_dir / "db_passwords.json").write_text(
             json.dumps({
+                "_comment": "AEGIS-AI SYNTHETIC HONEYTOKEN TEST FILE - NOT REAL CREDENTIALS (USED STRICTLY FOR ATTACK SIMULATION)",
                 "prod_db": "mock_postgres_user:P@ssw0rdSynthetic99!@db.internal.mock:5432/core",
                 "jwt_secret": "mock-jwt-signing-secret-synthetic-token-entropy-8812"
             }, indent=2),

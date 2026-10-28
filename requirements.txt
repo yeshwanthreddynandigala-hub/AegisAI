@@ -1,0 +1,20 @@
+# AegisAI - Autonomous AI Agent Behavioral Security Platform
+# Core Backend Framework
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.0
+SQLAlchemy==2.1.4
+
+# Authentication & Cryptography (BCrypt Password Hashing & Signed JWT Tokens)
+bcrypt==5.0.0
+PyJWT==2.15.1
+
+# Machine Learning & Multivariate Anomaly Detection
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+
+# Automated Testing & Asynchronous Verification
+pytest==9.1.1
+httpx==0.28.1
+anyio==4.15.1
